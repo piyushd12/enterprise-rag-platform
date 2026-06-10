@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+htmlcov/
+.coverage
+
+.env
+
+test.db
+
+.vscode/settings.json
+.idea/
+
+.DS_Store
+Thumbs.db
