@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
-from app.routers import auth
+from app.routers import auth, workspaces
 
 settings = get_settings()
 
@@ -21,6 +21,9 @@ app = FastAPI(
     debug=settings.debug,
     lifespan=lifespan
 )
+
+app.include_router(auth.router)
+app.include_router(workspaces.router)   
 
 app.add_middleware(
     CORSMiddleware,
