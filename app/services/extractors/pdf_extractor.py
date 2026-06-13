@@ -14,10 +14,18 @@ class PDFExtractor:
     def extract(self, file_bytes: bytes) -> dict:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         pages = []
+        page_boundaries = []
+        running_char_count = 0
 
         for page_num in range(len(doc)):
             page = doc[page_num]
             text = page.get_text("text").strip()
+            page_label = f"[Page {page_num + 1}]\n"
+            page_text = page_label + text
+
+            page_boundaries.append(running_char_count)
+            running_char_count += len(page_text) + 2
+
             pages.append({
                 "page_num": page_num + 1,
                 "text": text,
@@ -35,4 +43,5 @@ class PDFExtractor:
             "text": full_text,
             "page_count": len(doc),
             "pages": pages,
+            "page_boundaries": page_boundaries,
         }
