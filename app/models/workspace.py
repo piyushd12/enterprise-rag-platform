@@ -22,6 +22,11 @@ class Workspace(Base, TimestampMixin):
 
     members: Mapped[list["WorkspaceMember"]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
 
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         return f"Workspace(id={self.id!r}, name={self.name!r})"
 

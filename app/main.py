@@ -5,13 +5,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
-from app.routers import auth, workspaces
+from app.routers import auth, workspaces, documents
+from app.services.storage import StorageService 
 
 settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"Starting {settings.app_name}")
+
+    try:
+        storage = StorageService()
+        storage.ensure_bucket_exists()
+    except Exception as e:
+        print(f"MinIO bucket setup failed: {e}. Is MinIO running?")
+
     yield
     print("Shutting down")
 
@@ -34,6 +42,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(documents.router)
 
 @app.get("/health",tags=["Health"])
 async def health_check():
