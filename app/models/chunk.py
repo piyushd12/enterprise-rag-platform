@@ -8,7 +8,7 @@ class DocumentChunk(Base, TimestampMixin):
     __tablename__ = "document_chunks"
 
     id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=generate_uuid
+        String(100), primary_key=True, default=generate_uuid
     )
     document_id: Mapped[str] = mapped_column(
         String(36),
