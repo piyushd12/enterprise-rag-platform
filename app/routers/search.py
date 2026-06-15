@@ -61,3 +61,36 @@ async def search_documents(
         results=chunk_results,
         total_found=len(chunk_results),
     )
+
+
+@router.get(
+    "/search/stats",
+    summary="Get vector store stats for this workspace",
+)
+async def get_search_stats(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+):
+    """Returns the number of indexed chunks and collection health."""
+    from app.services.vector_store import vector_store, COLLECTION_NAME
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+    count = vector_store.client.count(
+        collection_name=COLLECTION_NAME,
+        count_filter=Filter(
+            must=[
+                FieldCondition(
+                    key="workspace_id",
+                    match=MatchValue(value=workspace_id)
+                )
+            ]
+        ),
+        exact=False,
+    )
+
+    return {
+        "workspace_id": workspace_id,
+        "indexed_chunks": count.count,
+        "collection": COLLECTION_NAME,
+    }
