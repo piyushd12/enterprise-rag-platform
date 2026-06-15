@@ -14,6 +14,7 @@ from app.schemas.documents import DocumentResponse
 from app.services.extractors.factory import SUPPORTED_TYPES
 from app.services.storage import StorageService
 from app.worker.tasks.ingestion import process_document
+from app.services.vector_store import vector_store
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -161,5 +162,10 @@ async def delete_document(
         storage.delete_file(document.s3_key)
     except Exception as e:
         logger.warning(f"Could not delete file from MinIO: {e}")
+
+    try:
+        vector_store.delete_document_vectors(document.id, workspace_id)
+    except Exception as e:
+        logger.warning(f"Could not delete Qdrant vectors: {e}")
 
     await db.delete(document)
