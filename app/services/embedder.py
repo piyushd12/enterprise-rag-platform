@@ -1,17 +1,19 @@
 import logging
 from fastembed import TextEmbedding
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 EMBEDDING_DIM = 384
+CACHE_DIR = str(Path.home() / "./cache" / "fastembed")
 
 
 class EmbedderService:
 
     def __init__(self):
         logger.info(f"Loading embedding model: {MODEL_NAME}")
-        self._model = TextEmbedding(MODEL_NAME)
+        self._model = TextEmbedding(model_name=MODEL_NAME,cache_dir=CACHE_DIR)
         logger.info("Embedding model loaded successfully")
 
     def embed_texts(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
