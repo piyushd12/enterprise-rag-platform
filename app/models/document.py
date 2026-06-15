@@ -37,10 +37,14 @@ class Document(Base, TimestampMixin):
         index=True,
     )
     error_message: Mapped[str | None] = mapped_column(String(2000), nullable=True)
-    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # can be very long
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="documents")
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"Document(id={self.id!r}, title={self.title!r}, status={self.status!r})"

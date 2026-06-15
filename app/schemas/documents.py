@@ -14,3 +14,15 @@ class DocumentResponse(BaseModel):
     # Note: extracted_text can be too large for list API responses so not included
 
     model_config = {"from_attributes": True}
+
+class DocumentChunkResponse(BaseModel):
+    id: str
+    document_id: str
+    chunk_index: int
+    chunk_text: str
+    page_num: int
+    token_count: int
+    char_start: int
+    char_end: int
+
+    model_config = {"from_attributes": True}

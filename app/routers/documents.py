@@ -10,10 +10,12 @@ from app.dependencies import get_current_user, get_current_workspace
 from app.models.document import Document, DocumentStatus
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.schemas.documents import DocumentResponse
+from app.models.chunk import DocumentChunk
+from app.schemas.documents import DocumentResponse, DocumentChunkResponse
 from app.services.extractors.factory import SUPPORTED_TYPES
 from app.services.storage import StorageService
 from app.worker.tasks.ingestion import process_document
+from app.services.vector_store import vector_store
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -134,6 +136,42 @@ async def get_document(
     return document
 
 
+@router.get(
+    "/{document_id}/chunks",
+    response_model=list[DocumentChunkResponse],
+    summary="List all chunks for a document (useful for debugging retrieval)",
+)
+async def list_document_chunks(
+    workspace_id: str,
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: AsyncSession = Depends(get_db),
+):
+    doc_result = await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.workspace_id == workspace_id,
+        )
+    )
+    document = doc_result.scalar_one_or_none()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if document.status != DocumentStatus.CHUNKED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Document is not yet chunked. Current status: {document.status}",
+        )
+
+    chunks_result = await db.execute(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id)
+        .order_by(DocumentChunk.chunk_index)
+    )
+    return chunks_result.scalars().all()
+
+
 @router.delete(
     "/{document_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -161,5 +199,10 @@ async def delete_document(
         storage.delete_file(document.s3_key)
     except Exception as e:
         logger.warning(f"Could not delete file from MinIO: {e}")
+
+    try:
+        vector_store.delete_document_vectors(document.id, workspace_id)
+    except Exception as e:
+        logger.warning(f"Could not delete Qdrant vectors: {e}")
 
     await db.delete(document)
