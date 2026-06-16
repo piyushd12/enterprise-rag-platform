@@ -14,7 +14,7 @@ async def run_rag_pipeline(
     question: str,
     workspace_id: str,
     conversation_history: list,
-    top_k: int = 10,
+    top_k: int = 3,
 ) -> dict:
     logger.info(
         f"RAG pipeline started: workspace={workspace_id}, "
