@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
-from app.routers import auth, workspaces, documents, search
+from app.routers import auth, workspaces, documents, search, chat
 from app.services.storage import StorageService
 from app.services.vector_store import vector_store
 
@@ -51,6 +51,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(search.router)
+app.include_router(chat.router)
 
 @app.get("/health",tags=["Health"])
 async def health_check():
