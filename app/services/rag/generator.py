@@ -23,17 +23,44 @@ STRICT RULES:
 
 def _build_model_string() -> str:
     provider = settings.llm_provider.lower()
-    if provider == "ollama":
+    logger.info(
+        f"LLM Provider={settings.llm_provider}, "
+        f"Model={provider}"
+    )
+    if provider == "groq":
+        return "groq/llama-3.1-8b-instant"
+    elif provider == "ollama":
         return f"ollama/{settings.ollama_model}"
     elif provider == "openai":
         return "gpt-4o"
-    elif provider == "groq":
-        return "groq/llama-3.1-70b-versatile"
     elif provider == "bedrock":
         return "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"
     else:
         raise ValueError(f"Unknown LLM provider: '{provider}'. "
                          f"Valid options: ollama, openai, groq, bedrock")
+
+
+def _build_provider_kwargs() -> dict:
+    provider = settings.llm_provider.lower()
+
+    if provider == "groq":
+        if not settings.groq_api_key:
+            raise RuntimeError(
+                "LLM_PROVIDER is set to 'groq' but GROQ_API_KEY is missing."
+            )
+        return {"api_key": settings.groq_api_key}
+
+    elif provider == "ollama":
+        return {"api_base": settings.ollama_base_url}
+
+    elif provider == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError(
+                "LLM_PROVIDER is set to 'openai' but OPENAI_API_KEY is missing."
+            )
+        return {"api_key": settings.openai_api_key}
+
+    return {}
 
 
 def _build_messages(
@@ -64,38 +91,30 @@ async def generate_rag_response(
     model = _build_model_string()
     messages = _build_messages(question, context, history)
 
-    logger.info(f"Calling LLM: model={model}, messages={len(messages)}")
+    call_kwargs = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": settings.max_response_tokens,
+        "temperature": 0.1,
+    }
+
+    call_kwargs.update(_build_provider_kwargs())
+
+    logger.info(
+        f"Using provider={settings.llm_provider} model={model}"
+    )
 
     try:
-        response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            max_tokens=settings.max_response_tokens,
-            temperature=0.1,
-            api_base=settings.ollama_base_url if settings.llm_provider == "ollama" else None,
-        )
-
+        response = await litellm.acompletion(**call_kwargs)
         answer = response.choices[0].message.content.strip()
         tokens_used = response.usage.total_tokens if response.usage else None
-
-        logger.info(
-            f"LLM response received: {len(answer)} chars, "
-            f"tokens_used={tokens_used}"
-        )
-
-        return {
-            "answer": answer,
-            "tokens_used": tokens_used,
-            "model": model,
-        }
-
+        logger.info(f"LLM response: {len(answer)} chars, tokens={tokens_used}")
+        return {"answer": answer, "tokens_used": tokens_used, "model": model}
     except Exception as e:
         logger.error(f"LLM call failed: {e}")
         raise RuntimeError(f"LLM generation failed: {str(e)}") from e
     
 
-# app/services/rag/generator.py
-# DELETE the _CONTEXT_SIGNALS set completely — remove those lines entirely
 
 async def rewrite_query_for_retrieval(
     question: str,
@@ -137,17 +156,16 @@ async def rewrite_query_for_retrieval(
     )
 
     try:
-        response = await litellm.acompletion(
-            model=_build_model_string(),
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=100,
-            temperature=0.0,
-            api_base=(
-                settings.ollama_base_url
-                if settings.llm_provider == "ollama"
-                else None
-            ),
-        )
+        call_kwargs = {
+            "model": _build_model_string(),
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 100,
+            "temperature": 0.0,
+        }
+
+        call_kwargs.update(_build_provider_kwargs())
+
+        response = await litellm.acompletion(**call_kwargs)
         rewritten = response.choices[0].message.content.strip()
 
         if not rewritten or len(rewritten) > 400:
