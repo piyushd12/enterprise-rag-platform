@@ -10,6 +10,29 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
+async def workspace_has_chunked_documents(
+    workspace_id: str,
+) -> bool:
+    """
+    Quick check before running a full RAG search.
+    Returns False if no chunked documents exist yet.
+    """
+    from app.services.vector_store import vector_store, COLLECTION_NAME
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+    count = vector_store.client.count(
+        collection_name=COLLECTION_NAME,
+        count_filter=Filter(
+            must=[FieldCondition(
+                key="workspace_id",
+                match=MatchValue(value=workspace_id)
+            )]
+        ),
+        exact=False,
+    )
+    return count.count > 0
+
+
 async def run_rag_pipeline(
     question: str,
     workspace_id: str,
