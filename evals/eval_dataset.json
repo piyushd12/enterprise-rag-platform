@@ -1,0 +1,42 @@
+[
+  {
+    "question": "In Case 1, what is the penalty for the layer jump from node 0 to node 1?",
+    "ground_truth": "Penalty = (3 \u2212 1)\u00b2 = 4",
+    "reference_chunk": "Sample Test Cases\nCase 1\nInput:\n2\n\n1\n\n10\n\n1 10\n\n3 100\n\n0 1\nOutput:\n106\nExplanation:\nOnly possible simple path: 0 \u2192 1\nLayers: 1 \u2192 3 (valid, non-decreasing)\nPenalty = (3 \u2212 1)\u00b2 = 4\nValue gained = 10 + 100 = 110\nFinal score = 110 \u2212 4 = 106\nOutput = 106\nCase 2\nInput:\n3\n\n2\n\n3\n\n1 10\n\n2 20\n\n3 30\n\n0 1\n1 2\nOutput:\n58\nExplanation:\nPath: 0 \u2192 1 \u2192 2\nLayer sequence: 1 \u2192 2 \u2192 3 (valid)\nPenalties:\n1\u21922 : (2\u22121)\u00b2 = 1\n2\u21923 : (3\u22122)\u00b2 = 1\nTotal penalty = 2\nValue sum = 10 + 20 + 30 = 60\nFinal = 60 \u2212 2 = 58\nOutput = 58\nCase 3\nInput:\n3\n\n2\n\n3\n\n1 -5\n\n2 100\n\n3 -10\n\n0 1\n\n1 2\nOutput:\n100\n\nExplanation:\nPossible path: 0 \u2192 1 \u2192 2\nBut node 0 has negative value, and node 2 has negative value.\nSo best choice is to start the path at node 1 only.\nPath: 1\nValue = 100\nNo penalties\nScore = 100\nWhy not 1 \u2192 2 ?\nPenalty = (3\u22122)\u00b2 = 1\nValue = 100 + (\u221210) = 90\nTotal = 90 \u2212 1 = 89 < 100\nWhy not 0 \u2192 1 ?\nValue = \u22125 + 100 = 95\nPenalty = (2\u22121)\u00b2 = 1\nFinal = 94 < 100\nOutput = 100",
+    "document_id": "1a9a63ab-c063-40f2-ae97-c8ba36868663",
+    "doc_title": "Infosys-Sample-Questions 2026.pdf",
+    "page_num": 11
+  },
+  {
+    "question": "What is the 14th intermediate project idea listed in the text?",
+    "ground_truth": "Resume Builder + ATS Rank Checker",
+    "reference_chunk": "19.\u200bPDF Form Autocomplete Tool\u200b\n \n20.\u200bSaaS to Convert Notion pages to Websites\u200b\n \n21.\u200bCustom Code Quality Scorer\u200b\n \n22.\u200bCloud Cost Estimator\u200b\n \n23.\u200bSecure Auth System with OAuth2\u200b\n \n24.\u200bAgent-based Tech Support Bot\u200b\n \n25.\u200bInfrastructure-as-Code Visualizer\u200b\n \n26.\u200bAI Job Descriptions Analyzer\u200b\n \n27.\u200bLive Coding Interview Simulator\u200b\n \n28.\u200bZero-shot File Classifier\u200b\n \n29.\u200bGitHub Trending Notifier App\u200b\n \n30.\u200bKubernetes Visual Cluster Manager\u200b\n \n \n\ud83d\udd27 50 Intermediate Project Ideas \n1.\u200b Blog CMS with Markdown & Auth\u200b\n \n2.\u200b Ecommerce Admin Panel\u200b\n \n3.\u200b Feedback Collector with Charts\u200b\n \n4.\u200b Markdown to PDF Generator\u200b\n \n5.\u200b Code Snippet Manager\u200b\n \n6.\u200b Virtual Whiteboard App\u200b\n \n7.\u200b File-sharing App with QR\u200b\n \n8.\u200b WhatsApp Chat UI Clone\u200b\n\n9.\u200b YouTube Video Downloader CLI\u200b\n \n10.\u200bGitHub Profile Analyzer\u200b\n \n11.\u200bPortfolio Generator from Google Sheets\u200b\n \n12.\u200bHabit Tracker Progressive Web App\u200b\n \n13.\u200bLocal Image Compressor App\u200b\n \n14.\u200bResume Builder + ATS Rank Checker\u200b\n \n15.\u200bTask Manager with Voice Input\u200b\n \n16.\u200bPomodoro Timer SaaS\u200b\n \n17.\u200bAI-based Tweet Generator\u200b\n \n18.\u200bInvoice Generator for Freelancers\u200b\n \n19.\u200bJSON Formatter Web App\u200b\n \n20.\u200bReal-time Chat with Socket.IO\u200b\n \n21.\u200bBook Tracker App\u200b\n \n22.\u200bTwitter Clone with Firestore\u200b\n \n23.\u200bRecipe App with Filters\u200b\n \n24.\u200bPersonal Expense Tracker\u200b\n \n25.\u200bMedium Article Downloader\u200b\n \n26.\u200bBasic URL Shortener\u200b\n \n27.\u200bMulti-language Blog Platform\u200b\n \n28.\u200bOnline Markdown Notes\u200b\n \n29.\u200bHacker News Client in React\u200b\n \n30.\u200bSpotify Clone UI\u200b\n \n31.\u200bExcel Parser Tool\u200b\n \n32.\u200bEmail Scheduler\u200b",
+    "document_id": "6e1ed74a-2d6c-4b1c-8feb-18fa296743b1",
+    "doc_title": "\ud83d\ude80 Ultimate Project Guide for 2025 Placements.pdf",
+    "page_num": 4
+  },
+  {
+    "question": "What is the URL for the Docker official \"Get Started\" guide mentioned in the text?",
+    "ground_truth": "https://docs.docker.com/get-started/",
+    "reference_chunk": "Multi-stage builds: build stage (install dev deps) \u2192 runtime stage (copy only what's\nneeded)\nDocker Compose: services, volumes, networks, depends_on, health checks\nContainer networking: service names as hostnames (your app connects to postgres , not\nlocalhost )\nVolume mounts for local development (hot reload without rebuilding the image)\nBest resources:\nDocker official \"Get Started\" guide: https://docs.docker.com/get-started/ \u2014 do all 9 parts\nDocker Compose docs: https://docs.docker.com/compose/gettingstarted/\n\"Docker for Python Developers\" blog by Testdriven.io: https://testdriven.io/blog/docker-\nbest-practices/\nEstimated time to productive: 3\u20134 days (mostly hands-on practice)\nCommon pitfalls:\nRunning pip install  in the Dockerfile without caching the requirements layer first\n(rebuilds take forever)\nUsing depends_on  without health checks (your app starts before PostgreSQL is ready,\ncausing connection errors)\nNot using .dockerignore  (accidentally copying node_modules or .git into the image)\nArea 7: Prompt Engineering & Self-RAG (Need by: Week 10)\nCore concepts to understand:\nYou don't need to be a prompt wizard, but you do need to understand structured output (making\nthe LLM return JSON reliably), chain-of-thought prompting (ask the model to think before\nanswering), and how to implement Self-RAG reflection without full model fine-tuning.\nSystem vs user vs assistant messages and when to use each\nStructured output with Pydantic models (using .with_structured_output() )\nFew-shot examples: when and how to include them",
+    "document_id": "98fc8580-1d01-4892-a6c4-bc640b3adc15",
+    "doc_title": "enterprise_rag_platform_guide.md.pdf",
+    "page_num": 11
+  },
+  {
+    "question": "What is the Faithfulness score for the Self-RAG retrieval method according to the evaluation results table?",
+    "ground_truth": "0.84",
+    "reference_chunk": "|\n Dense Only \n|\n+\n Hybrid \n|\n+\n Re-ranking \n|\n+\n Self-RAG \n|\n|\n--------\n|\n-----------\n|\n---------\n|\n-------------\n|\n-----------\n|\n|\n Context Recall \n|\n 0.61 \n|\n 0.79 \n|\n 0.84 \n|\n 0.84 \n|\n|\n Faithfulness \n|\n 0.67 \n|\n 0.67 \n|\n 0.72 \n|\n 0.84 \n|\n|\n Answer Relevance\n\nDocumentation Tips\nARCHITECTURE.md  is your secret weapon. Recruiters and hiring managers at serious companies\nwill read it. It signals that you think about engineering decisions, not just implementations.\nFor each major component, document:\nWhat problem it solves\nWhat alternatives you considered and why you rejected them\nWhat trade-offs your choice makes\nExample entry:\nBuilt with focus. Shipped with pride. One week at a time.\n|\n 0.74 \n|\n 0.78 \n|\n 0.81 \n|\n 0.83 \n|\nmarkdown\n### Why LangGraph instead of LangChain AgentExecutor\nLangChain's AgentExecutor is a black box \u2014 you pass in tools and get back an answer,\nbut have limited control over the loop. When an agent gets stuck (tool call fails,\nLLM hallucinates a tool name), debugging is painful.\nLangGraph models the agent as an explicit state machine. Each node is a Python funct\nyou wrote. Each edge is a condition you defined. When something goes wrong, you can \nexactly which state the agent was in and why it transitioned incorrectly.\nThe trade-off: LangGraph requires more setup code. Worth it.",
+    "document_id": "98fc8580-1d01-4892-a6c4-bc640b3adc15",
+    "doc_title": "enterprise_rag_platform_guide.md.pdf",
+    "page_num": 56
+  },
+  {
+    "question": "What is the name of the file in the hooks directory under frontend?",
+    "ground_truth": "useChat.ts",
+    "reference_chunk": "\u2502\n\u251c\u2500\u2500 frontend/                     # Next.js application (Week 9+)\n\u2502   \u251c\u2500\u2500 app/                      # Next.js App Router\n\u2502   \u251c\u2500\u2500 components/\n\u2502   \u251c\u2500\u2500 hooks/\n\u2502   \u2502   \u2514\u2500\u2500 useChat.ts\n\u2502   \u2514\u2500\u2500 lib/\n\u2502\n\u251c\u2500\u2500 streamlit_app/                # Streamlit MVP (Weeks 1-8)\n\u2502   \u2514\u2500\u2500 main.py\n\u2502",
+    "document_id": "98fc8580-1d01-4892-a6c4-bc640b3adc15",
+    "doc_title": "enterprise_rag_platform_guide.md.pdf",
+    "page_num": 51
+  }
+]

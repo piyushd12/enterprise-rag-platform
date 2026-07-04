@@ -17,6 +17,10 @@ class ChunkResult(BaseModel):
     page_num: int
     chunk_index: int
     score: float
+    score_type: str | None = Field(
+        default=None,
+        description="'rrf' for hybrid results, None for dense-only"
+    )
 
 
 class SearchResponse(BaseModel):

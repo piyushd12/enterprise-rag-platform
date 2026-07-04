@@ -15,3 +15,6 @@ test.db
 
 .DS_Store
 Thumbs.db
+.aider*
+
+./workdone/

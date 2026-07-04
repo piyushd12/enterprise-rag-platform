@@ -42,7 +42,7 @@ def api_post(path: str, data: dict) -> dict | None:
             f"{API_BASE}{path}",
             json=data,
             headers=auth_headers(),
-            timeout=60,
+            timeout=180,
         )
         r.raise_for_status()
         return r.json()

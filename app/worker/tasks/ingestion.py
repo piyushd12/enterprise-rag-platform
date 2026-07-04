@@ -118,6 +118,33 @@ def process_document(self, document_id: str):
                 f"Status: CHUNKED. Chunks: {len(chunks)}"
             )
 
+            # ── Step 9: Refresh BM25 index with the new chunks ───────────────
+            # The BM25 index lives in the FastAPI process. In a same-process
+            # deployment the singleton is shared; in Docker (separate processes)
+            # call POST /workspaces/{id}/search/rebuild-bm25 after uploading.
+            try:
+                from app.services.retrieval.bm25_index import bm25_index
+                chunk_dicts = [
+                    {
+                        "id": c["id"],
+                        "workspace_id": c["workspace_id"],
+                        "document_id": c["document_id"],
+                        "chunk_text": c["chunk_text"],
+                        "page_num": c["page_num"],
+                        "chunk_index": c["chunk_index"],
+                    }
+                    for c in chunks
+                ]
+                bm25_index.add_chunks(chunk_dicts)
+                logger.info(
+                    f"[Task] BM25 index updated: {bm25_index.total_chunks} total chunks"
+                )
+            except Exception as bm25_err:
+                logger.warning(
+                    f"[Task] BM25 index update failed (non-fatal): {bm25_err}. "
+                    "Call POST /search/rebuild-bm25 to refresh manually."
+                )
+
         except Exception as exc:
             logger.error(f"[Task] Ingestion failed for {document_id}: {exc}")
             document.status = DocumentStatus.FAILED
