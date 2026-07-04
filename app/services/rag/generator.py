@@ -35,6 +35,8 @@ def _build_model_string() -> str:
         return "gpt-4o"
     elif provider == "bedrock":
         return "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"
+    elif provider == 'openrouter':
+        return "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
     else:
         raise ValueError(f"Unknown LLM provider: '{provider}'. "
                          f"Valid options: ollama, openai, groq, bedrock")
@@ -52,6 +54,17 @@ def _build_provider_kwargs() -> dict:
 
     elif provider == "ollama":
         return {"api_base": settings.ollama_base_url}
+
+    elif provider == "openrouter":
+        if not settings.openrouter_api_key:
+            raise RuntimeError(
+                "LLM_PROVIDER is set to 'openrouter' but OPENROUTER_API_KEY is missing."
+            )
+
+        return {
+            "api_key": settings.openrouter_api_key,
+            "api_base": "https://openrouter.ai/api/v1",
+        }
 
     elif provider == "openai":
         if not settings.openai_api_key:
@@ -90,6 +103,10 @@ async def generate_rag_response(
 ) -> dict:
     model = _build_model_string()
     messages = _build_messages(question, context, history)
+    logger.warning(
+        f"Provider={settings.llm_provider}, "
+        f"Model={model}"
+    )
 
     call_kwargs = {
         "model": model,

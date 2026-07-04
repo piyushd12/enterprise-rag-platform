@@ -48,15 +48,17 @@ class VectorStoreService:
         else:
             logger.info(f"Qdrant collection '{COLLECTION_NAME}' already exists")
 
-    def upsert_chunks(self, chunks: list[dict], embeddings: list[list[float]]) -> None:
+    def upsert_chunks(self, chunks: list[dict], embeddings: list[list[float]]) -> list[str]:
         if len(chunks) != len(embeddings):
             raise ValueError(
                 f"Mismatch: {len(chunks)} chunks but {len(embeddings)} embeddings"
             )
 
         points = []
+        point_ids = []
         for chunk, vector in zip(chunks, embeddings):
             point_id = str(uuid.uuid4())
+            point_ids.append(point_id)
             points.append(
                 PointStruct(
                     id=point_id,
@@ -79,9 +81,15 @@ class VectorStoreService:
         )
         logger.info(f"Upserted {len(points)} vectors into Qdrant")
 
-        return [p.id for p in points]
+        # Return the point IDs (was unreachable before due to early return)
+        return point_ids
 
-    def search(self, query_vector: list[float], workspace_id: str, top_k: int = 10, document_id: str | None = None,
+    def search(
+        self,
+        query_vector: list[float],
+        workspace_id: str,
+        top_k: int = 10,
+        document_id: str | None = None,
     ) -> list[dict]:
 
         filter_conditions = [
@@ -105,7 +113,8 @@ class VectorStoreService:
             query_filter=Filter(must=filter_conditions),
             limit=top_k,
             with_payload=True,
-            score_threshold=0.3,
+            # Removed score_threshold=0.3 — it silently drops borderline-relevant chunks.
+            # RRF fusion handles ranking quality without needing a hard cutoff.
         )
 
         return [
