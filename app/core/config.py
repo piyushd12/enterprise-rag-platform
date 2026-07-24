@@ -33,10 +33,6 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
 
-    openai_api_key: str | None = None
-    groq_api_key: str | None = None
-    max_response_tokens: int = 1024
-    rag_context_token_budget: int = 3000
 
 @lru_cache
 def get_settings() -> Settings:
