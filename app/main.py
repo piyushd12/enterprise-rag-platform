@@ -5,13 +5,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
-from app.routers import auth, workspaces
+from app.routers import auth, workspaces, documents, search, chat
+from app.services.storage import StorageService
+from app.services.vector_store import vector_store
 
 settings = get_settings()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"Starting {settings.app_name}")
+
+    try:
+        storage = StorageService()
+        storage.ensure_bucket_exists()
+    except Exception as e:
+        print(f"MinIO bucket setup failed: {e}")
+
+    try:
+        vector_store.ensure_collection_exists()
+    except Exception as e:
+        print(f"Qdrant setup failed: {e}")
+
     yield
     print("Shutting down")
 
@@ -34,6 +49,9 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(documents.router)
+app.include_router(search.router)
+app.include_router(chat.router)
 
 @app.get("/health",tags=["Health"])
 async def health_check():
