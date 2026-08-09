@@ -5,6 +5,8 @@ description = "Enterprise-grade RAG application with caching, async queues, obse
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "langsmith>=0.10.17",
+    "logfire>=4.40.0",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.2.2",
 ]
