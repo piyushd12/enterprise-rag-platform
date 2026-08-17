@@ -1,0 +1,38 @@
+LangGraph: Building Stateful AI Agents
+
+LangGraph is a library for building stateful, multi-step AI agent workflows as directed graphs. Built on top of LangChain, it provides explicit control over the flow of data through an AI pipeline.
+
+Key Concepts
+
+State: LangGraph uses a TypedDict to define the state that flows through the graph. Each node can read from and write to this shared state, enabling complex data pipelines where each step builds on previous results.
+
+Nodes: Functions that perform a specific task (e.g., retrieve documents, generate an answer, check a cache). Each node receives the current state and returns updates to it. Nodes are the building blocks of a LangGraph workflow.
+
+Edges: Define the flow between nodes. LangGraph supports both unconditional edges (always follow this path) and conditional edges (choose the next node based on state). This enables branching logic like cache-hit shortcuts.
+
+Compilation: After defining nodes and edges, the graph is compiled into a runnable. The compiled graph handles state management, execution order, and can be invoked with initial state.
+
+Benefits for RAG Pipelines
+
+LangGraph is particularly well-suited for RAG because it allows you to model the retrieval-augmented generation process as an explicit state machine. This provides several advantages:
+
+1. Extensibility: New nodes (reranking, HyDE, query expansion) can be inserted without restructuring the graph.
+2. Conditional Logic: Cache hits can short-circuit expensive retrieval and generation steps.
+3. Observability: Each node execution is automatically traced when LangSmith is configured, providing per-node latency and token usage.
+4. Error Handling: Fallback paths can be defined as conditional edges based on error states.
+5. Testing: Individual nodes can be tested in isolation since they are pure functions of state.
+
+Example Pattern
+
+A typical RAG LangGraph looks like:
+
+cache_lookup -> (cache hit?) -> return cached result
+                (cache miss?) -> retrieve -> rerank -> generate -> cache_write
+
+Each node is a Python function that takes a RAGState TypedDict and returns a partial update. The graph engine merges these updates into the running state.
+
+Integration with LangSmith
+
+LangGraph natively integrates with LangSmith for tracing. When LANGSMITH_TRACING=true and LANGSMITH_API_KEY are set as environment variables, every graph invocation creates a trace with child spans for each node. This provides automatic observability without manual instrumentation code.
+
+The trace includes: node names, execution order, input/output for each node, token counts for LLM calls, and total latency breakdown. Custom metadata (like request_id or provider used) can be attached via the config parameter when invoking the graph.
