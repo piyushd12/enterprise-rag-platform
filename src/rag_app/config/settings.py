@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # --- Infrastructure ---
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6380/0"
 
     # --- Embedding Model ---
     embedding_model: str = "BAAI/bge-small-en-v1.5"
