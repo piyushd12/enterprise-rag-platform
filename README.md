@@ -76,16 +76,3 @@ See the architecture document for full details on:
 ## Environment Variables
 
 See `.env.example` for all required and optional variables.
-
-## uv Workflow
-
-This project uses `uv` exclusively for package management:
-
-```bash
-uv add <package>       # Add a dependency
-uv sync                # Install all dependencies
-uv run <command>       # Run within the venv
-uv venv                # Create virtual environment
-```
-
-Never use `pip install` directly.
