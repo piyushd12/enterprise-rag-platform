@@ -32,6 +32,7 @@ class RAGState(TypedDict, total=False):
     # Cache
     cache_hit: bool
     cached_answer: str | None
+    cached_sources: list[dict]
 
     # Retrieval
     retrieved_chunks: list[RetrievedChunk]

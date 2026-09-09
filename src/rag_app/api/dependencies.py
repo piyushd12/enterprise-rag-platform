@@ -48,3 +48,19 @@ def get_llm_provider() -> LLMProvider:
         fallback=OpenRouterProvider(),
         obs=obs,
     )
+
+
+@lru_cache
+def get_cache():
+    """Singleton RedisCache provider (cache-aside pattern)."""
+    from rag_app.caching.redis_cache import RedisCache
+    obs = get_obs()
+    return RedisCache(obs=obs)
+
+
+@lru_cache
+def get_queue():
+    """Singleton TaskQueue (Celery-backed)."""
+    from rag_app.queue.redis_queue import RedisQueue
+    obs = get_obs()
+    return RedisQueue(obs=obs)

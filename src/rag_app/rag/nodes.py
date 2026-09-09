@@ -3,10 +3,15 @@ Individual node functions for the RAG LangGraph pipeline.
 
 Each node is a pure function: takes RAGState, returns a partial state update.
 Nodes are independently testable and traced by LangSmith as child runs.
+
+Node topology (Phase 2):
+    cache_lookup → [hit?] END
+                   [miss] retrieve → generate → cache_write → END
 """
 
 from __future__ import annotations
 
+from rag_app.caching.redis_cache import RedisCache
 from rag_app.core.interfaces import EmbeddingProvider, LLMProvider, VectorStore
 from rag_app.rag.state import RAGState
 
@@ -75,6 +80,63 @@ def make_generate_node(llm_provider: LLMProvider):
         }
 
     return generate
+
+
+def make_cache_lookup_node(cache: RedisCache):
+    """Factory for the cache-lookup node — checks for a cached answer.
+
+    On cache hit: sets cache_hit=True, cached_answer with the stored content,
+    and cached_sources with the stored source metadata.
+    On cache miss: sets cache_hit=False so downstream nodes run normally.
+    """
+    async def cache_lookup(state: RAGState) -> dict:
+        query = state["query"]
+        result = await cache.get_answer(query)
+
+        if result is not None:
+            return {
+                "cache_hit": True,
+                "cached_answer": result["answer"],
+                "cached_sources": result.get("sources", []),
+            }
+        return {"cache_hit": False}
+
+    return cache_lookup
+
+
+def make_cache_write_node(cache: RedisCache):
+    """Factory for the cache-write node — stores generated answer after retrieval.
+
+    Serializes the answer and source metadata as JSON and writes to the answer
+    cache with the configured TTL. Called only on cache-miss paths.
+    """
+    async def cache_write(state: RAGState) -> dict:
+        query = state["query"]
+        answer = state.get("generated_answer", "")
+        chunks = state.get("reranked_chunks") or state.get("retrieved_chunks", [])
+
+        # Serialize sources for cache (avoid storing full large content)
+        sources_for_cache = [
+            {
+                "content": c.content[:500],
+                "source_id": c.metadata.get("source_id", ""),
+                "chunk_index": c.metadata.get("chunk_index", 0),
+                "score": c.score,
+                "filename": c.metadata.get("filename", ""),
+            }
+            for c in chunks
+        ]
+        await cache.set_answer(query, answer, sources_for_cache)
+        return {}
+
+    return cache_write
+
+
+def _redirect_after_cache_lookup(state: RAGState) -> str:
+    """Conditional edge: skip retrieve/generate/cache_write on cache hit."""
+    if state.get("cache_hit"):
+        return "end"
+    return "retrieve"
 
 
 def _build_rag_prompt(query: str, context: str) -> str:
