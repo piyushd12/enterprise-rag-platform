@@ -19,6 +19,30 @@ services:
     command: redis-server --appendonly yes
     restart: unless-stopped
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: rag-worker
+    command: uv run celery -A rag_app.queue.celery_app worker --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      - REDIS_URL=redis://redis:6380/0
+      - QDRANT_URL=http://qdrant:6333
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+      - LANGSMITH_TRACING=true
+      - CACHE_TTL_ANSWERS=${CACHE_TTL_ANSWERS}
+      - CACHE_TTL_EMBEDDINGS=${CACHE_TTL_EMBEDDINGS}
+    depends_on:
+      - redis
+      - qdrant
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
   redis_data:

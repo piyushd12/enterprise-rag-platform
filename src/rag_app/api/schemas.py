@@ -7,8 +7,9 @@ concrete implementation and can be used by the Streamlit client too.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
 
+from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # /chat
@@ -51,13 +52,22 @@ class ChatResponse(BaseModel):
 
 
 class IngestResponse(BaseModel):
-    """Response body for POST /ingest (synchronous ingestion in Phase 1)."""
+    """Response body for POST /ingest (async, returns task id)."""
 
-    source_id: str
+    task_id: str
+    status: str = "queued"
     filename: str
-    chunk_count: int
-    doc_type: str
-    message: str = "Ingestion complete"
+    message: str = "Ingestion task enqueued"
+
+
+class TaskStatusResponse(BaseModel):
+    """Response body for GET /ingest/status/{task_id}."""
+
+    task_id: str
+    status: Literal["queued", "started", "retried", "succeeded", "failed"]
+    result: dict | None = None
+    error: str | None = None
+    progress: dict | None = None  # e.g. {"chunks_processed": 5, "total_chunks": 10}
 
 
 # ---------------------------------------------------------------------------

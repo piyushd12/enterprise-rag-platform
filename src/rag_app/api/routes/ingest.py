@@ -1,26 +1,23 @@
 """
 Document ingestion endpoint.
 
-Phase 1: Synchronous ingestion (blocks until complete).
-Phase 2: Will be replaced with async Celery task + status polling.
+Phase 2: Asynchronous ingestion via Celery — enqueues a task and returns
+a task_id immediately. GET /ingest/status/{task_id} polls task state with
+progress metadata for live progress tracking.
 """
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from rag_app.api.dependencies import (
-    get_embedding_provider,
-    get_obs,
-    get_vector_store,
-)
-from rag_app.api.schemas import IngestResponse
-from rag_app.core.interfaces import EmbeddingProvider, VectorStore
-from rag_app.ingestion.pipeline import ingest_file
+from rag_app.api.dependencies import get_obs, get_queue
+from rag_app.api.schemas import IngestResponse, TaskStatusResponse
 from rag_app.observability.provider import ObservabilityProvider
+from rag_app.queue.redis_queue import RedisQueue
 
 router = APIRouter(tags=["ingestion"])
 
@@ -29,13 +26,15 @@ router = APIRouter(tags=["ingestion"])
 async def ingest_document(
     file: UploadFile = File(..., description="Document file (PDF, TXT, or MD)"),
     obs: ObservabilityProvider = Depends(get_obs),
-    embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
-    vector_store: VectorStore = Depends(get_vector_store),
+    queue: RedisQueue = Depends(get_queue),
 ) -> IngestResponse:
-    """Upload and ingest a document into the vector store.
+    """Upload and ingest a document into the vector store (async via Celery).
 
-    Accepts PDF, TXT, and MD files. The file is chunked, embedded,
-    and upserted into Qdrant with metadata.
+    The file is saved to a temporary location, a Celery task is enqueued,
+    and the task_id is returned immediately. Use GET /ingest/status/{task_id}
+    to poll progress and get results.
+
+    Supports PDF, TXT, and MD files.
     """
     # Validate file type
     filename = file.filename or "unknown"
@@ -55,29 +54,58 @@ async def ingest_document(
             tmp.write(content)
             tmp_path = tmp.name
 
-        try:
-            # Ensure collection exists
-            await vector_store.ensure_collection()
+        # Generate source_id (stable hash of the file content)
+        source_id = hashlib.sha256(content).hexdigest()[:16]
 
-            # Run ingestion pipeline
-            result = await ingest_file(
+        # Prepare metadata
+        metadata = {
+            "filename": filename,
+            "doc_type": ext.lstrip("."),
+            "source_id": source_id,
+        }
+
+        # Enqueue the Celery task
+        try:
+            task_id = queue.enqueue(
+                "rag_app.ingestion.tasks.ingest_document",
                 file_path=tmp_path,
-                embedding_provider=embedding_provider,
-                vector_store=vector_store,
-                obs=obs,
+                source_id=source_id,
+                metadata=metadata,
             )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            obs.log_error("ingest.failed", {"filename": filename, "error": str(e)})
-            raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
-        finally:
-            # Clean up temp file
+            # Cleanup on enqueue failure
             Path(tmp_path).unlink(missing_ok=True)
+            obs.log_error("ingest.enqueue.failed", {"filename": filename, "error": str(e)})
+            raise HTTPException(status_code=503, detail=f"Task queue unavailable: {e}")
 
     return IngestResponse(
-        source_id=result["source_id"],
-        filename=result["filename"],
-        chunk_count=result["chunk_count"],
-        doc_type=result["doc_type"],
+        task_id=task_id,
+        status="queued",
+        filename=filename,
+        message=f"Ingestion task enqueued for {filename}",
+    )
+
+
+@router.get("/ingest/status/{task_id}", response_model=TaskStatusResponse)
+async def get_ingest_status(
+    task_id: str,
+    obs: ObservabilityProvider = Depends(get_obs),
+    queue: RedisQueue = Depends(get_queue),
+) -> TaskStatusResponse:
+    """Poll the status of an ingestion task.
+
+    Returns the current state (queued/started/retried/succeeded/failed),
+    any error message, and progress metadata with chunk counts.
+    """
+    try:
+        status = queue.get_status(task_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to query task status: {e}")
+
+    return TaskStatusResponse(
+        task_id=status["task_id"],
+        status=status["status"],
+        result=status.get("result"),
+        error=status.get("error"),
+        progress=status.get("progress"),
     )
