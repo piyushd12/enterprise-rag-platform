@@ -26,9 +26,10 @@ services:
     container_name: rag-worker
     command: uv run celery -A rag_app.queue.celery_app worker --loglevel=info
     volumes:
-      - .:/app
+      - ./src:/app/src
+      - ./data/temp:/app/data/temp
     environment:
-      - REDIS_URL=redis://redis:6380/0
+      - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
       - GROQ_API_KEY=${GROQ_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
