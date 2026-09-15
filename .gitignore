@@ -26,6 +26,8 @@ env/
 # Data
 data/uploads/
 data/temp/
+data/eval/results/
+data/eval/.ragas_cache/
 
 # OS
 .DS_Store

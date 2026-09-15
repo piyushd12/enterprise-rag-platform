@@ -1,0 +1,95 @@
+{
+  "description": "RAGAS ground-truth Q&A set for Phase 3 evaluation. Each entry is a {question, ground_truth} pair authored from the actual text of the 7 documents in RAGAS_DOCS_TO_INGEST/ (ingested into the `documents` Qdrant collection). Only 'reference' answers are needed — RAGAS metrics compare live /chat retrieval+generation output against these, so no hand-picked context chunks are required.",
+  "items": [
+    {
+      "id": "apple-1",
+      "source_doc": "apple_fy25_10k.pdf",
+      "question": "For what fiscal year end date did Apple file this Form 10-K, and how many full-time equivalent employees did the company report?",
+      "ground_truth": "The Form 10-K covers Apple's fiscal year ended September 27, 2025. As of that fiscal year end, Apple reported approximately 166,000 full-time equivalent employees."
+    },
+    {
+      "id": "apple-2",
+      "source_doc": "apple_fy25_10k.pdf",
+      "question": "What percentage of Apple's net sales in fiscal 2025 came through direct versus indirect distribution channels?",
+      "ground_truth": "During fiscal 2025, Apple's net sales through its direct and indirect distribution channels accounted for 40% and 60% of total net sales, respectively."
+    },
+    {
+      "id": "apple-3",
+      "source_doc": "apple_fy25_10k.pdf",
+      "question": "Which five geographic areas does Apple report as its reportable segments?",
+      "ground_truth": "Apple's reportable segments are the Americas, Europe, Greater China, Japan, and Rest of Asia Pacific."
+    },
+    {
+      "id": "attention-1",
+      "source_doc": "Attentio_paper.pdf",
+      "question": "What BLEU score did the Transformer achieve on the WMT 2014 English-to-German translation task, and how does the paper describe this result?",
+      "ground_truth": "The Transformer achieves a BLEU score of 28.4 on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU."
+    },
+    {
+      "id": "attention-2",
+      "source_doc": "Attentio_paper.pdf",
+      "question": "How many attention heads and encoder/decoder layers does the base Transformer model use, and what is its model dimension?",
+      "ground_truth": "The base Transformer uses N = 6 identical layers in both the encoder and decoder stacks, with a model dimension d_model of 512. It uses h = 8 parallel attention heads."
+    },
+    {
+      "id": "resnet-1",
+      "source_doc": "Deep_residual_learning_rp.pdf",
+      "question": "What top-5 error rate did the ensemble of residual nets achieve on the ImageNet test set, and what competition did this win?",
+      "ground_truth": "An ensemble of residual nets achieved a 3.57% top-5 error on the ImageNet test set, winning 1st place in the ILSVRC 2015 classification task."
+    },
+    {
+      "id": "resnet-2",
+      "source_doc": "Deep_residual_learning_rp.pdf",
+      "question": "How deep was the deepest residual network evaluated on ImageNet in the paper, and how does its complexity compare to VGG nets?",
+      "ground_truth": "The paper evaluates residual nets up to 152 layers deep on ImageNet -- 8x deeper than VGG nets -- while still having lower computational complexity than VGG nets."
+    },
+    {
+      "id": "mobydick-1",
+      "source_doc": "moby_dick.pdf",
+      "question": "What is the opening line of Moby-Dick, and what is Chapter 1 titled?",
+      "ground_truth": "Moby-Dick opens with the line 'Call me Ishmael,' in Chapter 1, titled 'Loomings.'"
+    },
+    {
+      "id": "mobydick-2",
+      "source_doc": "moby_dick.pdf",
+      "question": "In his own words from Chapter 1, why does Ishmael say he goes to sea whenever he feels grim or low?",
+      "ground_truth": "Ishmael says going to sea is 'a way I have of driving off the spleen and regulating the circulation' -- whenever he finds himself growing grim about the mouth, or it is a damp, drizzly November in his soul, he knows it is time to get to sea as soon as he can."
+    },
+    {
+      "id": "prideprejudice-1",
+      "source_doc": "Pride_and_Prejudice.pdf",
+      "question": "In Pride and Prejudice, why does Elizabeth Bennet walk three miles to Netherfield Park?",
+      "ground_truth": "Elizabeth walks three miles to Netherfield, alone and on foot since the carriage was not available, to visit her elder sister Jane, who has fallen ill with a bad cold after getting wet on her way there and is staying at Netherfield."
+    },
+    {
+      "id": "prideprejudice-2",
+      "source_doc": "Pride_and_Prejudice.pdf",
+      "question": "How do Mr. Bingley and Mr. Darcy react differently to Elizabeth Bennet's muddy, three-mile walk to Netherfield?",
+      "ground_truth": "Mr. Bingley reacts warmly, saying he thought Miss Elizabeth Bennet looked remarkably well when she arrived, while his sisters mock her muddy petticoat. Mr. Darcy says little, torn between admiration for how the exercise had brightened her eyes and doubt about whether the occasion justified her coming so far alone."
+    },
+    {
+      "id": "climate-1",
+      "source_doc": "wikipedia_climate_change.pdf",
+      "question": "By roughly how much had global surface temperature risen for the 2016-2025 decade average compared to the 1850-1900 pre-industrial baseline, and how much of that is attributed to human influence?",
+      "ground_truth": "For the 2016-2025 decade average, observed warming relative to 1850-1900 was about 1.26 degrees Celsius (range 1.13 to 1.36 degrees Celsius), of which about 1.24 degrees Celsius is estimated to be human-induced."
+    },
+    {
+      "id": "climate-2",
+      "source_doc": "wikipedia_climate_change.pdf",
+      "question": "According to the article, to what levels have atmospheric concentrations of carbon dioxide, methane, and nitrous oxide risen?",
+      "ground_truth": "Concentrations of carbon dioxide, methane, and nitrous oxide have increased to levels unprecedented in at least 800,000 years."
+    },
+    {
+      "id": "quantum-1",
+      "source_doc": "wikipedia_quantum_computer.pdf",
+      "question": "What did Google announce in October 2019 regarding quantum supremacy, and which processor did it use?",
+      "ground_truth": "In October 2019, Google published a landmark quantum supremacy claim using a 54-qubit programmable superconducting processor named Sycamore, in a paper published in Nature. The claim was subsequently disputed by IBM, sparking debate about its veracity."
+    },
+    {
+      "id": "quantum-2",
+      "source_doc": "wikipedia_quantum_computer.pdf",
+      "question": "What quantum algorithm did Peter Shor develop in 1994, and why was it significant for cryptography?",
+      "ground_truth": "In 1994, Peter Shor developed a quantum algorithm for integer factorization and the discrete logarithm problem. It was significant because an efficient discrete-logarithm or factorization algorithm would break widely used public-key cryptography systems such as RSA."
+    }
+  ]
+}
