@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
     # --- LLM Models ---
-    llm_primary_model: str = "llama-3.3-70b-versatile"
-    llm_fallback_model: str = "nvidia/llama-3.1-nemotron-70b-instruct:free"
+    llm_primary_model: str = "openai/gpt-oss-20b"
+    llm_fallback_model: str = "openrouter/free"
 
     # --- Chunking ---
     chunk_size: int = 500
