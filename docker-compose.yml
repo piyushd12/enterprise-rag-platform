@@ -28,17 +28,19 @@ services:
     volumes:
       - ./src:/app/src
       - ./data/temp:/app/data/temp
+      - ./data/eval:/app/data/eval
+    # Load every setting from .env so the worker never silently drifts from
+    # what the host process uses (previously only a hand-picked subset of
+    # vars was passed through, so e.g. LLM_PRIMARY_MODEL updates in .env
+    # were never seen by the worker -- it kept using settings.py's stale
+    # hardcoded default). Only Redis/Qdrant need overriding: inside the
+    # Compose network containers reach each other by service name and
+    # internal port, not the host-mapped values in .env.
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
-      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
-      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
-      - LANGSMITH_TRACING=true
-      - CACHE_TTL_ANSWERS=${CACHE_TTL_ANSWERS}
-      - CACHE_TTL_EMBEDDINGS=${CACHE_TTL_EMBEDDINGS}
     depends_on:
       - redis
       - qdrant
