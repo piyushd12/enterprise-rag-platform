@@ -9,15 +9,21 @@ from __future__ import annotations
 
 from rag_app.config.settings import settings
 
+_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
+
 
 def chunk_text(
     text: str,
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
 ) -> list[str]:
-    """Split text into overlapping chunks.
+    """Split text into overlapping chunks, each at most chunk_size characters.
 
-    Splitting priority: double-newline → single-newline → sentence → space → char.
+    Splitting priority: double-newline -> single-newline -> sentence -> space -> char.
+    Every returned chunk is guaranteed to be <= chunk_size characters: a piece
+    that is still too large after splitting on one separator is recursively
+    split again on the next, finer separator (falling back to a hard
+    character slice only once no separator remains).
 
     Args:
         text: The full document text.
@@ -33,44 +39,66 @@ def chunk_text(
     if len(text) <= size:
         return [text.strip()] if text.strip() else []
 
-    separators = ["\n\n", "\n", ". ", " ", ""]
-    return _recursive_split(text, separators, size, overlap)
+    return _split_recursive(text, _SEPARATORS, size, overlap)
 
 
-def _recursive_split(
+def _split_recursive(
     text: str,
     separators: list[str],
     chunk_size: int,
     chunk_overlap: int,
 ) -> list[str]:
-    """Recursively split text using a hierarchy of separators."""
-    final_chunks: list[str] = []
-
-    # Find the best separator that exists in the text
+    """Split text on the best available separator, recursing into any
+    resulting piece that is still larger than chunk_size."""
     separator = separators[-1]
-    for sep in separators:
-        if sep in text:
+    remaining_separators: list[str] = []
+    for i, sep in enumerate(separators):
+        if sep == "" or sep in text:
             separator = sep
+            remaining_separators = separators[i + 1 :]
             break
 
-    # Split on the chosen separator
     splits = text.split(separator) if separator else list(text)
 
+    good_splits: list[str] = []
+    for split in splits:
+        piece = split.strip() if separator else split
+        if not piece:
+            continue
+        if len(piece) <= chunk_size:
+            good_splits.append(piece)
+        elif remaining_separators:
+            good_splits.extend(
+                _split_recursive(piece, remaining_separators, chunk_size, chunk_overlap)
+            )
+        else:
+            # No finer separator left -- hard character slice as a last resort.
+            good_splits.extend(
+                piece[i : i + chunk_size] for i in range(0, len(piece), chunk_size)
+            )
+
+    return _merge_splits(good_splits, separator, chunk_size, chunk_overlap)
+
+
+def _merge_splits(
+    splits: list[str],
+    separator: str,
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[str]:
+    """Greedily merge small pieces into chunks up to chunk_size, carrying
+    trailing overlap forward into the next chunk."""
+    final_chunks: list[str] = []
     current_chunk: list[str] = []
     current_length = 0
 
-    for split in splits:
-        piece = split.strip()
-        if not piece:
-            continue
-
+    for piece in splits:
         piece_len = len(piece) + (len(separator) if current_chunk else 0)
 
         if current_length + piece_len > chunk_size and current_chunk:
-            # Emit current chunk
-            chunk_text_joined = separator.join(current_chunk).strip()
-            if chunk_text_joined:
-                final_chunks.append(chunk_text_joined)
+            chunk_joined = separator.join(current_chunk).strip()
+            if chunk_joined:
+                final_chunks.append(chunk_joined)
 
             # Keep overlap from the end of the current chunk
             overlap_chunks: list[str] = []
@@ -85,14 +113,14 @@ def _recursive_split(
             current_length = sum(len(c) for c in current_chunk) + len(separator) * max(
                 0, len(current_chunk) - 1
             )
+            piece_len = len(piece) + (len(separator) if current_chunk else 0)
 
         current_chunk.append(piece)
         current_length += piece_len
 
-    # Emit remaining
     if current_chunk:
-        chunk_text_joined = separator.join(current_chunk).strip()
-        if chunk_text_joined:
-            final_chunks.append(chunk_text_joined)
+        chunk_joined = separator.join(current_chunk).strip()
+        if chunk_joined:
+            final_chunks.append(chunk_joined)
 
     return final_chunks
