@@ -40,3 +40,10 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+
+# Local agent session notes (not project documentation)
+Antigravity_agent_chat_till_now.md
+Antigravity_agent_chat_till_now_compact.md
+hermes_till_now.md
+rag_app_ag.jsonl
+*.code-workspace
