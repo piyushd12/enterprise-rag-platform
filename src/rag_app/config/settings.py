@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     # --- Qdrant ---
     qdrant_collection_name: str = "documents"
 
+    # --- Ingestion ---
+    # Shared between the API process and the Celery worker (which may run in a
+    # separate container) so uploaded files enqueued for async ingestion are
+    # visible to whichever process actually processes them. Resolved relative
+    # to the process's own working directory — mount this same relative path
+    # into the worker container (see docker-compose.yml) rather than passing
+    # absolute host paths across the process boundary.
+    ingest_tmp_dir: str = "data/temp"
+
 
 # Singleton instance — import this wherever config is needed
 settings = Settings()

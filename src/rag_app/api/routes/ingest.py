@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from rag_app.api.dependencies import get_obs, get_queue
 from rag_app.api.schemas import IngestResponse, TaskStatusResponse
+from rag_app.config.settings import settings
 from rag_app.observability.provider import ObservabilityProvider
 from rag_app.queue.redis_queue import RedisQueue
 
@@ -46,13 +47,17 @@ async def ingest_document(
         )
 
     with obs.span("ingest.endpoint", {"filename": filename}):
-        # Save uploaded file to a temp location
+        # Save uploaded file into the shared ingest tmp dir (not the system /tmp)
+        # so a Celery worker in a separate container/filesystem can find it —
+        # only the filename crosses the process boundary, never an absolute path.
+        tmp_dir = Path(settings.ingest_tmp_dir).resolve()
+        tmp_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-            delete=False, suffix=ext, prefix="rag_ingest_"
+            delete=False, suffix=ext, prefix="rag_ingest_", dir=tmp_dir
         ) as tmp:
             content = await file.read()
             tmp.write(content)
-            tmp_path = tmp.name
+            tmp_filename = Path(tmp.name).name
 
         # Generate source_id (stable hash of the file content)
         source_id = hashlib.sha256(content).hexdigest()[:16]
@@ -68,13 +73,13 @@ async def ingest_document(
         try:
             task_id = queue.enqueue(
                 "rag_app.ingestion.tasks.ingest_document",
-                file_path=tmp_path,
+                file_path=tmp_filename,
                 source_id=source_id,
                 metadata=metadata,
             )
         except Exception as e:
             # Cleanup on enqueue failure
-            Path(tmp_path).unlink(missing_ok=True)
+            (tmp_dir / tmp_filename).unlink(missing_ok=True)
             obs.log_error("ingest.enqueue.failed", {"filename": filename, "error": str(e)})
             raise HTTPException(status_code=503, detail=f"Task queue unavailable: {e}")
 
