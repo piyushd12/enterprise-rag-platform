@@ -15,7 +15,7 @@ import logfire
 from fastapi import FastAPI
 
 from rag_app.api.dependencies import get_obs, get_vector_store
-from rag_app.api.routes import chat, health, ingest
+from rag_app.api.routes import chat, evaluate, health, ingest
 from rag_app.observability import configure_langsmith, configure_logfire
 
 
@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(chat.router)
     app.include_router(ingest.router)
+    app.include_router(evaluate.router)
 
     return app
 

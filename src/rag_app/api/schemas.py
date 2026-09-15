@@ -71,6 +71,30 @@ class TaskStatusResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# /evaluate
+# ---------------------------------------------------------------------------
+
+
+class EvalRequest(BaseModel):
+    """Request body for POST /evaluate."""
+
+    sample_size: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="Evaluate only the first N questions (default: all in the dataset)",
+    )
+
+
+class EvalResponse(BaseModel):
+    """Response body for POST /evaluate (async via Celery)."""
+
+    task_id: str
+    status: str = "queued"
+    message: str = "Evaluation task enqueued"
+
+
+# ---------------------------------------------------------------------------
 # /health
 # ---------------------------------------------------------------------------
 
