@@ -17,6 +17,7 @@ import asyncio
 import time
 from pathlib import Path
 
+from rag_app.config.settings import settings
 from rag_app.embeddings.fastembed_provider import FastEmbedProvider
 from rag_app.ingestion.pipeline import ingest_file
 from rag_app.observability.provider import ObservabilityProvider
@@ -64,13 +65,16 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
         5. Retry with exponential backoff on failure
 
     Args:
-        file_path: Path to the temporary file (stored by the API endpoint).
+        file_path: Filename of the temp file within settings.ingest_tmp_dir
+            (resolved locally, not an absolute path — the API process and
+            this worker may run in different containers/filesystems).
         source_id: Unique identifier for this document.
         metadata: Additional metadata (filename, doc_type, etc.).
     """
     obs = _get_worker_obs()
     task_id = self.request.id
     filename = metadata.get("filename", "unknown")
+    resolved_path = Path(settings.ingest_tmp_dir).resolve() / file_path
 
     # --- Task started ---
     obs.log_event(
@@ -89,8 +93,8 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
         )
 
         # Check file exists
-        if not Path(file_path).exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"File not found: {resolved_path}")
 
         # Get provider instances
         embedder = _get_worker_embedder()
@@ -104,10 +108,12 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
             loop.run_until_complete(store.ensure_collection())
             result = loop.run_until_complete(
                 ingest_file(
-                    file_path=file_path,
+                    file_path=str(resolved_path),
                     embedding_provider=embedder,
                     vector_store=store,
                     obs=obs,
+                    filename=filename,
+                    source_id=source_id,
                 )
             )
         finally:
@@ -133,7 +139,7 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
         cache.increment_collection_version()
 
         # Clean up temp file
-        Path(file_path).unlink(missing_ok=True)
+        resolved_path.unlink(missing_ok=True)
 
         return {
             "source_id": result["source_id"],
@@ -164,5 +170,5 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
         except Exception:
             # After the final retry attempt, self.retry() raises MaxRetriesExceededError.
             # Clean up the temp file and re-raise.
-            Path(file_path).unlink(missing_ok=True)
+            resolved_path.unlink(missing_ok=True)
             raise

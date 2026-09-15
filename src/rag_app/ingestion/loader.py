@@ -12,10 +12,24 @@ from pathlib import Path
 from pypdf import PdfReader
 
 
-def load_document(file_path: str | Path) -> list[dict]:
+def load_document(
+    file_path: str | Path,
+    filename: str | None = None,
+    source_id: str | None = None,
+) -> list[dict]:
     """Load a single document and return its content + metadata.
 
     Supported formats: .pdf, .txt, .md
+
+    Args:
+        file_path: Path to the file on disk to read.
+        filename: Original filename to record in metadata, if different from
+            `file_path`'s own name (e.g. when `file_path` is a randomly named
+            temp file staged by an upload endpoint). Defaults to `path.name`.
+        source_id: Stable identifier for this document, if the caller already
+            has one (e.g. a content hash). Defaults to a hash of the absolute
+            `file_path`, which is only stable for callers that always read
+            the same on-disk path (not true for temp-file uploads).
 
     Returns:
         List with a single dict: {'content': str, 'metadata': dict}
@@ -26,8 +40,8 @@ def load_document(file_path: str | Path) -> list[dict]:
         raise FileNotFoundError(f"Document not found: {path}")
 
     ext = path.suffix.lower()
-    filename = path.name
-    source_id = _generate_source_id(path)
+    filename = filename or path.name
+    source_id = source_id or _generate_source_id(path)
 
     if ext == ".pdf":
         return _load_pdf(path, source_id, filename)

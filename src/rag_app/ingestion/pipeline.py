@@ -24,6 +24,8 @@ async def ingest_file(
     obs: ObservabilityProvider,
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
+    filename: str | None = None,
+    source_id: str | None = None,
 ) -> dict:
     """Run the full ingestion pipeline for a single file.
 
@@ -33,12 +35,18 @@ async def ingest_file(
         3. Embed all chunks
         4. Upsert to vector store with metadata
 
+    Args:
+        filename: Original filename to record, if `file_path` is a staged
+            temp file with a different name (see `load_document`).
+        source_id: Caller-supplied stable identifier (e.g. content hash), if
+            `file_path` isn't a stable on-disk location (see `load_document`).
+
     Returns:
         Summary dict with source_id, chunk_count, filename.
     """
     with obs.span("ingestion.pipeline", {"file_path": str(file_path)}) as span_data:
         # 1. Load
-        docs = load_document(file_path)
+        docs = load_document(file_path, filename=filename, source_id=source_id)
         doc = docs[0]  # single-document loaders return a list of one
         content = doc["content"]
         metadata = doc["metadata"]
