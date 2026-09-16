@@ -6,13 +6,22 @@ hand-authored Q&A ground-truth set and scores it with RAGAS: faithfulness,
 answer relevancy, context precision, context recall.
 
 Free-tier resilience (Groq/OpenRouter only, no paid APIs):
+  - The judge LLM runs on OpenRouter (settings.llm_fallback_model), not
+    Groq: the RAG pipeline's own generation already spends Groq's tight
+    daily token budget (200K/day on this account), and a 15-question x
+    4-metric run needs many more judge calls than that budget survives.
+    Splitting judge calls onto a separate provider/quota means pipeline
+    generation and judging no longer compete for the same cap.
   - Judge LLM calls are disk-cached (data/eval/.ragas_cache) keyed on the
     actual prompt sent, so re-running against unchanged questions never
-    re-spends Groq's rate limit.
-  - RunConfig retries with exponential backoff on Groq rate-limit /
-    transient errors before giving up on a single metric call.
+    re-spends quota.
+  - RunConfig retries with exponential backoff on rate-limit/transient
+    errors before giving up on a single metric call.
   - ragas.evaluate(..., raise_exceptions=False) means a failing
-    question/metric becomes NaN in the results instead of crashing the run.
+    question/metric becomes NaN in the results instead of crashing the
+    run -- and the summary reports how many of the N rows actually
+    succeeded per metric, so a partial sample is never mistaken for a
+    full-dataset score.
 
 Faithfulness and Context Precision are the primary decision signals (does
 the answer stay grounded, does retrieval surface the right chunks);
@@ -27,9 +36,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-import groq
+import openai
 from langchain_community.embeddings import FastEmbedEmbeddings
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from ragas import EvaluationDataset, evaluate
 from ragas.cache import DiskCacheBackend
 from ragas.embeddings import LangchainEmbeddingsWrapper
@@ -58,10 +67,19 @@ JUDGE_CACHE_DIR = _PROJECT_ROOT / "data" / "eval" / ".ragas_cache"
 
 
 @dataclass
+class MetricScore:
+    """Aggregate score for one metric, honest about partial samples."""
+
+    mean: float
+    succeeded: int  # rows with a non-NaN score for this metric
+    total: int  # rows attempted
+
+
+@dataclass
 class EvalRunResult:
     """Summary of a single RAGAS evaluation run."""
 
-    scores: dict[str, float]  # metric -> mean score (NaN rows excluded)
+    scores: dict[str, MetricScore]  # metric -> mean + how many rows it covers
     per_question: list[dict]  # raw per-row results, including NaN failures
     results_path: Path
 
@@ -94,21 +112,27 @@ async def build_eval_dataset(
 
 
 def _build_judge_llm() -> LangchainLLMWrapper:
-    """RAGAS judge LLM: Groq, with retry/backoff and disk-cached calls."""
+    """RAGAS judge LLM: OpenRouter, with retry/backoff and disk-cached calls.
+
+    Deliberately NOT Groq -- the RAG pipeline's own generation already
+    spends from Groq's tight daily token budget, and judge calls (several
+    per question per metric) would compete for the same cap.
+    """
     JUDGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    chat = ChatGroq(
-        model=settings.llm_primary_model,
-        api_key=settings.groq_api_key,
+    chat = ChatOpenAI(
+        model=settings.llm_fallback_model,
+        openai_api_key=settings.openrouter_api_key,
+        openai_api_base="https://openrouter.ai/api/v1",
         temperature=0,
     )
     run_config = RunConfig(
         max_retries=6,
         max_wait=90,
         exception_types=(
-            groq.RateLimitError,
-            groq.APIConnectionError,
-            groq.APITimeoutError,
-            groq.InternalServerError,
+            openai.RateLimitError,
+            openai.APIConnectionError,
+            openai.APITimeoutError,
+            openai.InternalServerError,
         ),
     )
     cache = DiskCacheBackend(cache_dir=str(JUDGE_CACHE_DIR))
@@ -157,16 +181,26 @@ async def run_ragas_eval(
         )
 
         df = result.to_pandas()
-        scores = {
-            metric: float(df[metric].dropna().mean())
-            for metric in ALL_METRIC_NAMES
-            if metric in df.columns and df[metric].notna().any()
-        }
+        total = len(df)
+        scores: dict[str, MetricScore] = {}
+        for metric in ALL_METRIC_NAMES:
+            if metric not in df.columns:
+                continue
+            non_nan = df[metric].dropna()
+            if len(non_nan) == 0:
+                continue
+            scores[metric] = MetricScore(
+                mean=float(non_nan.mean()), succeeded=len(non_nan), total=total
+            )
 
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
         obs.log_event(
             "evaluation.run.completed",
-            {"scores": scores, "question_count": len(qa_items), "duration_ms": duration_ms},
+            {
+                "scores": {k: vars(v) for k, v in scores.items()},
+                "question_count": len(qa_items),
+                "duration_ms": duration_ms,
+            },
         )
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -174,7 +208,11 @@ async def run_ragas_eval(
     results_path = RESULTS_DIR / f"ragas_run_{timestamp}.json"
     per_question = df.to_dict(orient="records")
     results_path.write_text(
-        json.dumps({"scores": scores, "per_question": per_question}, indent=2, default=str),
+        json.dumps(
+            {"scores": {k: vars(v) for k, v in scores.items()}, "per_question": per_question},
+            indent=2,
+            default=str,
+        ),
         encoding="utf-8",
     )
 
@@ -182,14 +220,22 @@ async def run_ragas_eval(
 
 
 def print_summary(result: EvalRunResult) -> None:
-    """Print a human-readable summary table, primary metrics first."""
+    """Print a human-readable summary table, primary metrics first.
+
+    Always shows how many rows a score actually covers -- a mean over 1
+    surviving row and a mean over 15 are not comparable, so both are
+    printed rather than just the number.
+    """
     print(f"\nRAGAS evaluation results ({len(result.per_question)} questions)")
     print(f"Saved to: {result.results_path}\n")
-    print(f"{'Metric':<20}{'Score':<10}{'Signal'}")
-    print("-" * 45)
+    print(f"{'Metric':<20}{'Score':<10}{'Coverage':<12}{'Signal'}")
+    print("-" * 60)
     for metric in ALL_METRIC_NAMES:
-        if metric not in result.scores:
-            print(f"{metric:<20}{'N/A':<10}{'skipped (all rows failed)'}")
-            continue
         signal = "primary" if metric in PRIMARY_METRICS else "secondary"
-        print(f"{metric:<20}{result.scores[metric]:<10.4f}{signal}")
+        if metric not in result.scores:
+            print(f"{metric:<20}{'N/A':<10}{'0/?':<12}{signal} -- all rows failed")
+            continue
+        score = result.scores[metric]
+        coverage = f"{score.succeeded}/{score.total}"
+        note = "" if score.succeeded == score.total else " -- PARTIAL, interpret with caution"
+        print(f"{metric:<20}{score.mean:<10.4f}{coverage:<12}{signal}{note}")

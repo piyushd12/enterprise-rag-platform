@@ -45,13 +45,15 @@ def run_evaluation(self, sample_size: int | None = None):
         loop.close()
         asyncio.set_event_loop(None)
 
+    scores = {k: vars(v) for k, v in result.scores.items()}
+
     obs.log_event(
         "evaluation.task.succeeded",
-        {"task_id": task_id, "scores": result.scores, "question_count": len(qa_items)},
+        {"task_id": task_id, "scores": scores, "question_count": len(qa_items)},
     )
 
     return {
-        "scores": result.scores,
+        "scores": scores,
         "question_count": len(qa_items),
         "results_path": str(result.results_path),
     }
