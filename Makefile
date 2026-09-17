@@ -1,11 +1,11 @@
-.PHONY: infra dev worker ui seed eval lint test
+.PHONY: up down dev worker ui seed eval lint test
 
-# Start infrastructure (Qdrant + Redis)
-infra:
-	docker compose up -d
+# Start the full stack (Qdrant, Redis, Celery worker, FastAPI, Streamlit)
+up:
+	docker compose up -d --build
 
-# Stop infrastructure
-infra-down:
+# Stop the full stack
+down:
 	docker compose down
 
 # Run FastAPI dev server

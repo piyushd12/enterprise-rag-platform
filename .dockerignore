@@ -1,0 +1,12 @@
+.venv/
+.git/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+data/
+RAGAS_DOCS_TO_INGEST/
+*.md
+!README.md
+*.jsonl
+docker-compose.yml.backup

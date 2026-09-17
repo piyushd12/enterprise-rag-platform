@@ -14,4 +14,4 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 # Default command: run the Celery worker
-CMD ["uv", "run", "celery", "-A", "rag_app.queue.celery_app", "worker", "--loglevel=info"]
+CMD ["uv", "run", "--no-sync", "celery", "-A", "rag_app.queue.celery_app", "worker", "--loglevel=info"]

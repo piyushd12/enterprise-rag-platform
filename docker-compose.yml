@@ -33,7 +33,7 @@ services:
     # but wrong results when actually executed by Celery's prefork pool.
     # Trades away worker concurrency (already low at 2, for memory reasons)
     # for correctness.
-    command: uv run celery -A rag_app.queue.celery_app worker --loglevel=info --pool=solo
+    command: uv run --no-sync celery -A rag_app.queue.celery_app worker --loglevel=info --pool=solo
     volumes:
       - type: bind
         source: ./src
@@ -65,6 +65,53 @@ services:
     depends_on:
       - redis
       - qdrant
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: rag-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - type: bind
+        source: ./src
+        target: /app/src
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/temp
+        target: /app/data/temp
+        bind:
+          create_host_path: false
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      - redis
+      - qdrant
+    restart: "no"
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: rag-ui
+    ports:
+      - "8501:8501"
+    volumes:
+      - type: bind
+        source: ./ui
+        target: /app/ui
+        bind:
+          create_host_path: false
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
     restart: "no"
 
 volumes:

@@ -5,6 +5,8 @@ Communicates with the FastAPI backend over HTTP — no direct imports
 of backend code. Provides document upload/ingestion and chat interface.
 """
 
+import os
+
 import httpx
 import streamlit as st
 
@@ -12,7 +14,11 @@ import streamlit as st
 # Configuration
 # ---------------------------------------------------------------------------
 
-API_BASE = "http://localhost:8000"
+# Defaults to localhost for running the UI directly on the host; the
+# Docker Compose stack overrides this to the "api" service's container
+# name, since "localhost" inside the UI container would otherwise point
+# at itself rather than the API container.
+API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000")
 TIMEOUT = 120.0  # seconds — LLM calls can be slow on free tier
 
 
