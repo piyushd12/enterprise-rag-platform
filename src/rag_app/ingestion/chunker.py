@@ -33,8 +33,11 @@ def chunk_text(
     Returns:
         List of text chunks.
     """
-    size = chunk_size or settings.chunk_size
-    overlap = chunk_overlap or settings.chunk_overlap
+    # `or` would treat an explicit 0 (e.g. "no overlap") as falsy and
+    # silently fall back to the configured default -- use an explicit
+    # None-check so callers can actually request 0.
+    size = chunk_size if chunk_size is not None else settings.chunk_size
+    overlap = chunk_overlap if chunk_overlap is not None else settings.chunk_overlap
 
     if len(text) <= size:
         return [text.strip()] if text.strip() else []
