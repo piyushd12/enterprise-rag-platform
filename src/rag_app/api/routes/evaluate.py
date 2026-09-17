@@ -34,6 +34,9 @@ async def evaluate(
         task_id = queue.enqueue(
             "rag_app.evaluation.tasks.run_evaluation",
             sample_size=body.sample_size,
+            use_hyde=body.use_hyde,
+            use_reranker=body.use_reranker,
+            use_bm25=body.use_bm25,
         )
     except Exception as e:
         obs.log_error("evaluate.enqueue.failed", {"error": str(e)})

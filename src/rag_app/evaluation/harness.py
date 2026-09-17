@@ -55,6 +55,8 @@ from rag_app.llm.openrouter_provider import OpenRouterProvider
 from rag_app.llm.router import LLMRouter
 from rag_app.observability.provider import ObservabilityProvider
 from rag_app.rag.graph import build_rag_graph
+from rag_app.reranking.cross_encoder_reranker import CrossEncoderReranker
+from rag_app.retrieval.bm25_index import BM25Index
 from rag_app.vectorstore.qdrant_store import QdrantStore
 
 PRIMARY_METRICS = {"faithfulness", "context_precision"}
@@ -149,6 +151,9 @@ async def run_ragas_eval(
     qa_items: list[QAItem] | None = None,
     top_k: int = 5,
     obs: ObservabilityProvider | None = None,
+    use_hyde: bool = False,
+    use_reranker: bool = False,
+    use_bm25: bool = False,
 ) -> EvalRunResult:
     """Run the full RAGAS evaluation: live pipeline -> RAGAS scoring -> persist.
 
@@ -156,6 +161,20 @@ async def run_ragas_eval(
     container (matches scripts/seed_vectorstore.py). Runs the RAG graph
     WITHOUT the Redis cache so every question hits real retrieval and
     generation, uncontaminated by cached answers from a prior eval run.
+
+    Args:
+        use_hyde: Insert the hyde_expand node before retrieve, so the
+            query embedding comes from a generated hypothetical answer
+            passage instead of the raw question. Costs one extra LLM call
+            per question. Used to measure before/after when comparing
+            against a baseline run with use_hyde=False.
+        use_reranker: Retrieve a wider candidate pool and re-score it with
+            a local cross-encoder before generation, trimming back down to
+            top_k. Purely local compute, no extra API/quota cost.
+        use_bm25: Also run BM25 keyword search and merge it into the
+            candidate pool before reranking. Only has an effect when
+            use_reranker is also True -- otherwise nothing re-scores the
+            merged set.
     """
     obs = obs or ObservabilityProvider()
     qa_items = qa_items if qa_items is not None else load_qa_dataset()
@@ -165,7 +184,21 @@ async def run_ragas_eval(
     llm_provider: LLMProvider = LLMRouter(
         primary=GroqProvider(), fallback=OpenRouterProvider(), obs=obs
     )
-    graph = build_rag_graph(embedder, vector_store, llm_provider, cache=None)
+    reranker = CrossEncoderReranker() if use_reranker else None
+    keyword_search = (
+        BM25Index(qdrant_url=settings.qdrant_url, collection_name=settings.qdrant_collection_name)
+        if use_bm25
+        else None
+    )
+    graph = build_rag_graph(
+        embedder,
+        vector_store,
+        llm_provider,
+        cache=None,
+        use_hyde=use_hyde,
+        reranker=reranker,
+        keyword_search=keyword_search,
+    )
 
     with obs.span("evaluation.run", {"question_count": len(qa_items)}):
         start = time.perf_counter()

@@ -84,6 +84,18 @@ class EvalRequest(BaseModel):
         le=100,
         description="Evaluate only the first N questions (default: all in the dataset)",
     )
+    use_hyde: bool = Field(
+        default=False,
+        description="Run with the HyDE query-expansion node enabled, to compare against a baseline run",
+    )
+    use_reranker: bool = Field(
+        default=False,
+        description="Run with the cross-encoder reranker enabled, to compare against a baseline run",
+    )
+    use_bm25: bool = Field(
+        default=False,
+        description="Also merge BM25 keyword search into the candidate pool (only effective with use_reranker)",
+    )
 
 
 class EvalResponse(BaseModel):
