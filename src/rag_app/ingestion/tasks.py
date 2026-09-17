@@ -17,6 +17,8 @@ import asyncio
 import time
 from pathlib import Path
 
+from celery.utils.time import get_exponential_backoff_interval
+
 from rag_app.config.settings import settings
 from rag_app.embeddings.fastembed_provider import FastEmbedProvider
 from rag_app.ingestion.pipeline import ingest_file
@@ -161,12 +163,22 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
             },
         )
 
-        # Retry with exponential backoff (Celery handles the delay)
+        # Retry with exponential backoff. The task's retry_backoff/
+        # retry_backoff_max options only apply to Celery's automatic
+        # autoretry_for-driven retries -- a manual self.retry() call like
+        # this one ignores them and falls back to a flat default_retry_delay
+        # every time unless the countdown is computed explicitly, so it's
+        # done here instead.
         # NOTE: temp file is NOT deleted here — a retry may need it again.
         # It is cleaned up only on final task completion or when the
         # task is definitively marked FAILURE after all retries are exhausted.
+        countdown = get_exponential_backoff_interval(
+            factor=self.default_retry_delay,
+            retries=self.request.retries,
+            maximum=self.retry_backoff_max,
+        )
         try:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc, countdown=countdown)
         except Exception:
             # After the final retry attempt, self.retry() raises MaxRetriesExceededError.
             # Clean up the temp file and re-raise.

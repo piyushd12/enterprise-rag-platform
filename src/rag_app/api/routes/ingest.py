@@ -12,22 +12,27 @@ import hashlib
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
 from rag_app.api.dependencies import get_obs, get_queue
+from rag_app.api.rate_limit import limiter
 from rag_app.api.schemas import IngestResponse, TaskStatusResponse
 from rag_app.config.settings import settings
+from rag_app.core.interfaces import TaskQueue
 from rag_app.observability.provider import ObservabilityProvider
-from rag_app.queue.redis_queue import RedisQueue
 
 router = APIRouter(tags=["ingestion"])
 
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB
+
 
 @router.post("/ingest", response_model=IngestResponse)
+@limiter.limit("10/minute")
 async def ingest_document(
+    request: Request,
     file: UploadFile = File(..., description="Document file (PDF, TXT, or MD)"),
     obs: ObservabilityProvider = Depends(get_obs),
-    queue: RedisQueue = Depends(get_queue),
+    queue: TaskQueue = Depends(get_queue),
 ) -> IngestResponse:
     """Upload and ingest a document into the vector store (async via Celery).
 
@@ -52,15 +57,30 @@ async def ingest_document(
         # only the filename crosses the process boundary, never an absolute path.
         tmp_dir = Path(settings.ingest_tmp_dir).resolve()
         tmp_dir.mkdir(parents=True, exist_ok=True)
+        # Stream to disk in bounded chunks rather than reading the whole
+        # upload into memory first -- an unbounded `await file.read()`
+        # would let a single oversized upload exhaust worker memory before
+        # any size check could reject it.
+        hasher = hashlib.sha256()
+        size = 0
         with tempfile.NamedTemporaryFile(
             delete=False, suffix=ext, prefix="rag_ingest_", dir=tmp_dir
         ) as tmp:
-            content = await file.read()
-            tmp.write(content)
             tmp_filename = Path(tmp.name).name
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    tmp.close()
+                    (tmp_dir / tmp_filename).unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)}MB)",
+                    )
+                hasher.update(chunk)
+                tmp.write(chunk)
 
         # Generate source_id (stable hash of the file content)
-        source_id = hashlib.sha256(content).hexdigest()[:16]
+        source_id = hasher.hexdigest()[:16]
 
         # Prepare metadata
         metadata = {
@@ -95,7 +115,7 @@ async def ingest_document(
 async def get_ingest_status(
     task_id: str,
     obs: ObservabilityProvider = Depends(get_obs),
-    queue: RedisQueue = Depends(get_queue),
+    queue: TaskQueue = Depends(get_queue),
 ) -> TaskStatusResponse:
     """Poll the status of an ingestion task.
 

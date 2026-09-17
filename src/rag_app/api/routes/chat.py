@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from rag_app.api.dependencies import (
     get_cache,
@@ -18,6 +18,7 @@ from rag_app.api.dependencies import (
     get_reranker,
     get_vector_store,
 )
+from rag_app.api.rate_limit import limiter
 from rag_app.api.schemas import ChatRequest, ChatResponse, SourceChunk
 from rag_app.core.interfaces import (
     EmbeddingProvider,
@@ -33,7 +34,9 @@ router = APIRouter(tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
+@limiter.limit("20/minute")
 async def chat(
+    request: Request,
     body: ChatRequest,
     obs: ObservabilityProvider = Depends(get_obs),
     embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),

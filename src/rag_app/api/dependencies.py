@@ -16,6 +16,7 @@ from rag_app.core.interfaces import (
     KeywordSearchProvider,
     LLMProvider,
     Reranker,
+    TaskQueue,
     VectorStore,
 )
 from rag_app.embeddings.fastembed_provider import FastEmbedProvider
@@ -94,7 +95,7 @@ def get_cache():
 
 
 @lru_cache
-def get_queue():
+def get_queue() -> TaskQueue:
     """Singleton TaskQueue (Celery-backed)."""
     from rag_app.queue.redis_queue import RedisQueue
     obs = get_obs()

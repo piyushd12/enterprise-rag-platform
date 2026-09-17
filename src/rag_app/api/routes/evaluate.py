@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from rag_app.api.dependencies import get_obs, get_queue
 from rag_app.api.schemas import EvalRequest, EvalResponse, TaskStatusResponse
+from rag_app.core.interfaces import TaskQueue
 from rag_app.observability.provider import ObservabilityProvider
-from rag_app.queue.redis_queue import RedisQueue
 
 router = APIRouter(tags=["evaluation"])
 
@@ -23,7 +23,7 @@ router = APIRouter(tags=["evaluation"])
 async def evaluate(
     body: EvalRequest,
     obs: ObservabilityProvider = Depends(get_obs),
-    queue: RedisQueue = Depends(get_queue),
+    queue: TaskQueue = Depends(get_queue),
 ) -> EvalResponse:
     """Run the RAGAS evaluation harness (faithfulness, answer relevancy,
     context precision, context recall) against the ground-truth Q&A set.
@@ -48,7 +48,7 @@ async def evaluate(
 @router.get("/evaluate/status/{task_id}", response_model=TaskStatusResponse)
 async def get_evaluate_status(
     task_id: str,
-    queue: RedisQueue = Depends(get_queue),
+    queue: TaskQueue = Depends(get_queue),
 ) -> TaskStatusResponse:
     """Poll the status of an evaluation task: queued/started/succeeded/failed."""
     try:

@@ -13,8 +13,12 @@ from contextlib import asynccontextmanager
 
 import logfire
 from fastapi import FastAPI
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from rag_app.api.dependencies import get_keyword_search, get_obs, get_vector_store
+from rag_app.api.rate_limit import limiter
 from rag_app.api.routes import chat, evaluate, health, ingest
 from rag_app.observability import configure_langsmith, configure_logfire
 
@@ -63,6 +67,11 @@ def create_app() -> FastAPI:
 
     # Auto-instrument FastAPI with Logfire (request/response, latency, status)
     logfire.instrument_fastapi(app)
+
+    # Per-IP rate limiting (see api/rate_limit.py) on /chat and /ingest
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
 
     # Register routes
     app.include_router(health.router)
