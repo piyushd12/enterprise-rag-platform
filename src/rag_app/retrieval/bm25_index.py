@@ -26,11 +26,13 @@ collection_version counter invalidates on ingestion.
 from __future__ import annotations
 
 import re
+import time
 
 from qdrant_client import QdrantClient
 from rank_bm25 import BM25Okapi
 
 from rag_app.core.interfaces import KeywordSearchProvider, RetrievedChunk
+from rag_app.observability.provider import ObservabilityProvider
 
 _TOKEN_RE = re.compile(r"\w+")
 
@@ -42,14 +44,30 @@ def _tokenize(text: str) -> list[str]:
 class BM25Index(KeywordSearchProvider):
     """In-memory BM25 index built from a Qdrant collection's stored chunks."""
 
-    def __init__(self, qdrant_url: str, collection_name: str) -> None:
+    def __init__(
+        self,
+        qdrant_url: str,
+        collection_name: str,
+        obs: ObservabilityProvider | None = None,
+    ) -> None:
         self._client = QdrantClient(url=qdrant_url)
         self._collection_name = collection_name
+        self._obs = obs
         self._bm25: BM25Okapi | None = None
         self._chunks: list[RetrievedChunk] = []
 
     def rebuild(self) -> None:
-        """(Re)build the index from the collection's current contents."""
+        """(Re)build the index from the collection's current contents.
+
+        Logged to Logfire: this scrolls the entire collection and
+        tokenizes every chunk, which isn't free, and previously ran
+        invisibly -- most notably on the lazy first-search path (see
+        search() below), which fires on every eval run since a fresh
+        BM25Index is constructed per run and never explicitly rebuilt
+        ahead of time, silently inflating the retrieve node's latency
+        with no way to tell rebuild cost apart from actual search cost.
+        """
+        start = time.perf_counter()
         points, _ = self._client.scroll(
             collection_name=self._collection_name,
             limit=10_000,
@@ -62,6 +80,15 @@ class BM25Index(KeywordSearchProvider):
         ]
         tokenized = [_tokenize(c.content) for c in self._chunks]
         self._bm25 = BM25Okapi(tokenized) if tokenized else None
+
+        if self._obs:
+            self._obs.log_event(
+                "bm25.index.rebuilt",
+                {
+                    "chunk_count": len(self._chunks),
+                    "duration_ms": round((time.perf_counter() - start) * 1000, 2),
+                },
+            )
 
     def search(self, query: str, top_k: int) -> list[RetrievedChunk]:
         """Return the top_k chunks by BM25 score for the query."""

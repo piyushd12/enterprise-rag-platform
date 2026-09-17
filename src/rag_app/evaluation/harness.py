@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,9 +87,24 @@ class EvalRunResult:
     results_path: Path
 
 
-async def _run_pipeline(graph, question: str, top_k: int) -> tuple[str, list[str]]:
-    """Invoke the RAG graph for one question, returning (answer, contexts)."""
-    result = await graph.ainvoke({"query": question, "top_k": top_k, "filters": None})
+async def _run_pipeline(
+    graph, question: str, top_k: int, run_id: str, question_id: str
+) -> tuple[str, list[str]]:
+    """Invoke the RAG graph for one question, returning (answer, contexts).
+
+    Tags the LangSmith trace with eval_run_id + question_id (mirroring
+    routes/chat.py's request_id tagging) so a trace from an eval run can be
+    matched back to the specific question and run that produced it --
+    without this, every eval question's trace would be an anonymous
+    "rag_pipeline" run indistinguishable from any other.
+    """
+    config = {
+        "metadata": {"eval_run_id": run_id, "question_id": question_id, "query": question},
+        "run_name": "rag_pipeline_eval",
+    }
+    result = await graph.ainvoke(
+        {"query": question, "top_k": top_k, "filters": None}, config=config
+    )
     answer = result.get("generated_answer", "")
     chunks = result.get("reranked_chunks") or result.get("retrieved_chunks", [])
     contexts = [c.content for c in chunks]
@@ -96,12 +112,14 @@ async def _run_pipeline(graph, question: str, top_k: int) -> tuple[str, list[str
 
 
 async def build_eval_dataset(
-    qa_items: list[QAItem], graph, top_k: int = 5
+    qa_items: list[QAItem], graph, top_k: int = 5, run_id: str = ""
 ) -> EvaluationDataset:
     """Run each question through the live RAG pipeline and assemble a RAGAS dataset."""
     rows = []
     for item in qa_items:
-        answer, contexts = await _run_pipeline(graph, item["question"], top_k)
+        answer, contexts = await _run_pipeline(
+            graph, item["question"], top_k, run_id, item["id"]
+        )
         rows.append(
             {
                 "user_input": item["question"],
@@ -186,7 +204,11 @@ async def run_ragas_eval(
     )
     reranker = CrossEncoderReranker() if use_reranker else None
     keyword_search = (
-        BM25Index(qdrant_url=settings.qdrant_url, collection_name=settings.qdrant_collection_name)
+        BM25Index(
+            qdrant_url=settings.qdrant_url,
+            collection_name=settings.qdrant_collection_name,
+            obs=obs,
+        )
         if use_bm25
         else None
     )
@@ -200,10 +222,19 @@ async def run_ragas_eval(
         keyword_search=keyword_search,
     )
 
-    with obs.span("evaluation.run", {"question_count": len(qa_items)}):
-        start = time.perf_counter()
-        dataset = await build_eval_dataset(qa_items, graph, top_k=top_k)
+    run_id = uuid.uuid4().hex[:12]
+    with obs.span("evaluation.run", {"question_count": len(qa_items), "eval_run_id": run_id}):
+        # Pipeline and judging are timed separately -- both were previously
+        # folded into one "evaluation.run" duration, which made it
+        # impossible to tell from Logfire alone how much of a run's total
+        # time was our own retrieve/generate pipeline vs. RAGAS's judge LLM
+        # calls (a large, separate cost/latency driver: several judge calls
+        # per question per metric, on a different provider/quota).
+        pipeline_start = time.perf_counter()
+        dataset = await build_eval_dataset(qa_items, graph, top_k=top_k, run_id=run_id)
+        pipeline_duration_ms = round((time.perf_counter() - pipeline_start) * 1000, 2)
 
+        judge_start = time.perf_counter()
         result = evaluate(
             dataset=dataset,
             metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
@@ -212,6 +243,7 @@ async def run_ragas_eval(
             raise_exceptions=False,
             show_progress=True,
         )
+        judge_duration_ms = round((time.perf_counter() - judge_start) * 1000, 2)
 
         df = result.to_pandas()
         total = len(df)
@@ -226,13 +258,15 @@ async def run_ragas_eval(
                 mean=float(non_nan.mean()), succeeded=len(non_nan), total=total
             )
 
-        duration_ms = round((time.perf_counter() - start) * 1000, 2)
         obs.log_event(
             "evaluation.run.completed",
             {
+                "eval_run_id": run_id,
                 "scores": {k: vars(v) for k, v in scores.items()},
                 "question_count": len(qa_items),
-                "duration_ms": duration_ms,
+                "pipeline_duration_ms": pipeline_duration_ms,
+                "judge_duration_ms": judge_duration_ms,
+                "duration_ms": pipeline_duration_ms + judge_duration_ms,
             },
         )
 

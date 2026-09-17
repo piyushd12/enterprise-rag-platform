@@ -58,21 +58,28 @@ def run_evaluation(
         meta={"message": f"Evaluating {len(qa_items)} question(s)", "total_chunks": len(qa_items)},
     )
 
-    loop = asyncio.new_event_loop()
     try:
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(
-            run_ragas_eval(
-                qa_items=qa_items,
-                obs=obs,
-                use_hyde=use_hyde,
-                use_reranker=use_reranker,
-                use_bm25=use_bm25,
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                run_ragas_eval(
+                    qa_items=qa_items,
+                    obs=obs,
+                    use_hyde=use_hyde,
+                    use_reranker=use_reranker,
+                    use_bm25=use_bm25,
+                )
             )
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+    except Exception as exc:
+        obs.log_error(
+            "evaluation.task.failed",
+            {"task_id": task_id, "error": str(exc)},
         )
-    finally:
-        loop.close()
-        asyncio.set_event_loop(None)
+        raise
 
     scores = {k: vars(v) for k, v in result.scores.items()}
 

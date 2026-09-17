@@ -37,7 +37,7 @@ class RedisQueue(TaskQueue):
 
         if self._obs:
             self._obs.log_event(
-                "ingestion.task.enqueued",
+                "queue.task.enqueued",
                 {"task_id": result.id, "task_name": task_name},
             )
 

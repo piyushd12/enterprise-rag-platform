@@ -63,8 +63,8 @@ def get_llm_provider() -> LLMProvider:
 def get_reranker() -> Reranker:
     """Singleton cross-encoder Reranker (local ONNX, no API cost).
 
-    Not wired into /chat by default -- available for routes/scripts that
-    opt in (see evaluation/harness.py's use_reranker flag).
+    Wired into /chat by default (see routes/chat.py) and available for
+    the eval harness's use_reranker flag.
     """
     return CrossEncoderReranker()
 
@@ -78,7 +78,11 @@ def get_keyword_search() -> KeywordSearchProvider:
     on first search() call; does not auto-refresh on new ingestion (see
     BM25Index docstring).
     """
-    return BM25Index(qdrant_url=settings.qdrant_url, collection_name=settings.qdrant_collection_name)
+    return BM25Index(
+        qdrant_url=settings.qdrant_url,
+        collection_name=settings.qdrant_collection_name,
+        obs=get_obs(),
+    )
 
 
 @lru_cache
