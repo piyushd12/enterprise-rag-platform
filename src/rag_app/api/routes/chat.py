@@ -12,12 +12,20 @@ from fastapi import APIRouter, Depends
 from rag_app.api.dependencies import (
     get_cache,
     get_embedding_provider,
+    get_keyword_search,
     get_llm_provider,
     get_obs,
+    get_reranker,
     get_vector_store,
 )
 from rag_app.api.schemas import ChatRequest, ChatResponse, SourceChunk
-from rag_app.core.interfaces import EmbeddingProvider, LLMProvider, VectorStore
+from rag_app.core.interfaces import (
+    EmbeddingProvider,
+    KeywordSearchProvider,
+    LLMProvider,
+    Reranker,
+    VectorStore,
+)
 from rag_app.observability.provider import ObservabilityProvider
 from rag_app.rag.graph import build_rag_graph
 
@@ -32,19 +40,33 @@ async def chat(
     vector_store: VectorStore = Depends(get_vector_store),
     llm_provider: LLMProvider = Depends(get_llm_provider),
     cache=Depends(get_cache),
+    reranker: Reranker = Depends(get_reranker),
+    keyword_search: KeywordSearchProvider = Depends(get_keyword_search),
 ) -> ChatResponse:
     """Ask a question against the ingested documents.
 
     Invokes the LangGraph RAG pipeline with LangSmith tracing.
     The request_id is passed as both a Logfire span attribute and
     LangSmith run metadata for cross-correlation.
+
+    Retrieval uses the cross-encoder reranker + BM25 hybrid search by
+    default (verified in Phase 3 eval to fix real retrieval misses with
+    no regressions), at the cost of added per-request latency (~3.5s+ for
+    the reranker's cross-encoder scoring over a widened candidate pool).
     """
     request_id = str(uuid.uuid4())
     start = time.perf_counter()
 
     with obs.span("chat.request", {"request_id": request_id, "query": body.query}):
         # Build and invoke the LangGraph pipeline (with cache-aside)
-        graph = build_rag_graph(embedding_provider, vector_store, llm_provider, cache=cache)
+        graph = build_rag_graph(
+            embedding_provider,
+            vector_store,
+            llm_provider,
+            cache=cache,
+            reranker=reranker,
+            keyword_search=keyword_search,
+        )
 
         # LangSmith tracing config — request_id in metadata for correlation
         config = {

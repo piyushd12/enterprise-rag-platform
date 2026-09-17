@@ -10,12 +10,21 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from rag_app.core.interfaces import EmbeddingProvider, LLMProvider, VectorStore
+from rag_app.config.settings import settings
+from rag_app.core.interfaces import (
+    EmbeddingProvider,
+    KeywordSearchProvider,
+    LLMProvider,
+    Reranker,
+    VectorStore,
+)
 from rag_app.embeddings.fastembed_provider import FastEmbedProvider
 from rag_app.llm.groq_provider import GroqProvider
 from rag_app.llm.openrouter_provider import OpenRouterProvider
 from rag_app.llm.router import LLMRouter
 from rag_app.observability.provider import ObservabilityProvider
+from rag_app.reranking.cross_encoder_reranker import CrossEncoderReranker
+from rag_app.retrieval.bm25_index import BM25Index
 from rag_app.vectorstore.qdrant_store import QdrantStore
 
 
@@ -48,6 +57,28 @@ def get_llm_provider() -> LLMProvider:
         fallback=OpenRouterProvider(),
         obs=obs,
     )
+
+
+@lru_cache
+def get_reranker() -> Reranker:
+    """Singleton cross-encoder Reranker (local ONNX, no API cost).
+
+    Not wired into /chat by default -- available for routes/scripts that
+    opt in (see evaluation/harness.py's use_reranker flag).
+    """
+    return CrossEncoderReranker()
+
+
+@lru_cache
+def get_keyword_search() -> KeywordSearchProvider:
+    """Singleton BM25 keyword search index over the vector store's chunks.
+
+    Only meaningful combined with get_reranker() -- BM25 is a candidate
+    source for the reranker, not a standalone final ranking. Builds lazily
+    on first search() call; does not auto-refresh on new ingestion (see
+    BM25Index docstring).
+    """
+    return BM25Index(qdrant_url=settings.qdrant_url, collection_name=settings.qdrant_collection_name)
 
 
 @lru_cache

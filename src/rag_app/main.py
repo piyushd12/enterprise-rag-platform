@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 import logfire
 from fastapi import FastAPI
 
-from rag_app.api.dependencies import get_obs, get_vector_store
+from rag_app.api.dependencies import get_keyword_search, get_obs, get_vector_store
 from rag_app.api.routes import chat, evaluate, health, ingest
 from rag_app.observability import configure_langsmith, configure_logfire
 
@@ -32,6 +32,15 @@ async def lifespan(app: FastAPI):
         obs.log_event("app.qdrant.ready", {"collection": "documents"})
     except Exception as e:
         obs.log_warning("app.qdrant.unavailable", {"error": str(e)})
+
+    # Prebuild the BM25 index (now used by default in /chat, alongside the
+    # reranker) so the first real chat request isn't the one that pays for
+    # scrolling the whole collection and tokenizing it.
+    try:
+        get_keyword_search().rebuild()
+        obs.log_event("app.bm25.ready")
+    except Exception as e:
+        obs.log_warning("app.bm25.unavailable", {"error": str(e)})
 
     yield
 
