@@ -7,7 +7,7 @@ services:
       - "6334:6334"   # gRPC
     volumes:
       - qdrant_data:/qdrant/storage
-    restart: unless-stopped
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -17,18 +17,39 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
-    restart: unless-stopped
+    restart: "no"
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
     container_name: rag-worker
-    command: uv run celery -A rag_app.queue.celery_app worker --loglevel=info
+    # --pool=solo: no forking. Native ML libraries (ONNX Runtime, used by
+    # both the embedding and reranker models) have known fork-safety
+    # issues -- a forked worker process can silently inherit corrupted
+    # threading/session state from before the fork, causing occasional
+    # wrong (not crashed) inference results. Confirmed directly: the same
+    # retrieval code gave correct results in a fresh, non-forked process
+    # but wrong results when actually executed by Celery's prefork pool.
+    # Trades away worker concurrency (already low at 2, for memory reasons)
+    # for correctness.
+    command: uv run celery -A rag_app.queue.celery_app worker --loglevel=info --pool=solo
     volumes:
-      - ./src:/app/src
-      - ./data/temp:/app/data/temp
-      - ./data/eval:/app/data/eval
+      - type: bind
+        source: ./src
+        target: /app/src
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/temp
+        target: /app/data/temp
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/eval
+        target: /app/data/eval
+        bind:
+          create_host_path: false
     # Load every setting from .env so the worker never silently drifts from
     # what the host process uses (previously only a hand-picked subset of
     # vars was passed through, so e.g. LLM_PRIMARY_MODEL updates in .env
@@ -44,7 +65,7 @@ services:
     depends_on:
       - redis
       - qdrant
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
   qdrant_data:
