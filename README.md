@@ -20,6 +20,7 @@ architecture.
 | Task Queue | Celery |
 | Backend | FastAPI |
 | Frontend | Streamlit |
+| Deployment | Docker Compose |
 | LLM Observability | LangSmith |
 | Infra Observability | Logfire |
 | Evaluation | RAGAS |
@@ -58,46 +59,44 @@ flowchart LR
 ## Quick Start
 
 ### Prerequisites
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) package manager
 - Docker & Docker Compose
+- [uv](https://docs.astral.sh/uv/) package manager (only needed for native development or the `make` helper scripts below)
 
-### Setup
+### Run the full stack (one command)
 
 ```bash
-# 1. Clone and enter the project
-cd Rag-application
-
-# 2. Copy environment template and fill in API keys
-cp .env.example .env
-# Edit .env with your actual keys
-
-# 3. Create virtual environment and install dependencies
-uv venv
-uv sync
-
-# 4. Start infrastructure (Qdrant + Redis)
-make infra
-# or: docker compose up -d
-
-# 5. Seed sample documents
-make seed
-# or: uv run python scripts/seed_vectorstore.py
-
-# 6. Start the FastAPI backend
-make dev
-# or: uv run uvicorn rag_app.main:app --reload --host 0.0.0.0 --port 8000
-
-# 7. (In another terminal) Start the Streamlit UI
-make ui
-# or: uv run streamlit run ui/app.py --server.port 8501
+cp .env.example .env   # fill in your API keys
+make up                 # or: docker compose up -d --build
 ```
 
-### Running the Celery Worker (for async ingestion)
+This builds and starts all five services — Qdrant, Redis, the Celery
+worker, FastAPI, and Streamlit — wired together on one Docker network.
+Once it's up:
+
+- UI: http://localhost:8501
+- API: http://localhost:8000 (docs at `/docs`)
+
+Seed the sample documents once the stack is up:
 
 ```bash
-make worker
-# or: uv run celery -A rag_app.queue.celery_app worker --loglevel=info
+uv sync   # local venv, only needed to run this script
+uv run python scripts/seed_vectorstore.py
+```
+
+Bring the stack down with `make down` (or `docker compose down`).
+
+### Native development (faster iteration, no image rebuilds)
+
+Run each piece directly on the host instead, useful when actively
+editing code:
+
+```bash
+uv venv && uv sync
+docker compose up -d qdrant redis   # just the two stateful dependencies
+make seed     # seed sample documents
+make dev      # FastAPI, with --reload
+make worker   # in another terminal: Celery worker
+make ui       # in another terminal: Streamlit UI
 ```
 
 ### Other commands
@@ -220,6 +219,14 @@ span and the LangSmith run metadata, so a single request can be traced
 end-to-end across both tools. The evaluation harness uses the same
 pattern: every question is tagged with an `eval_run_id` and `question_id`
 that tie its LangSmith trace back to the matching Logfire event.
+
+**Viewing them:** LangSmith traces appear at
+[smith.langchain.com](https://smith.langchain.com) under the project
+named by `LANGSMITH_PROJECT`. Logfire traces appear at the project URL
+printed to stdout when the API or worker starts
+(`https://logfire-us.pydantic.dev/<org>/<project>`). Both require their
+respective API key in `.env`; with no key set, Logfire still logs to the
+local console and LangSmith tracing is simply disabled.
 
 Latency characteristics observed in practice:
 - The cross-encoder reranker + BM25 hybrid search add roughly 3.5–6s+ per
