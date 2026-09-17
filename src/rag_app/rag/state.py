@@ -29,6 +29,9 @@ class RAGState(TypedDict, total=False):
     # Embedding
     query_embedding: list[float]
 
+    # HyDE (Phase 3 — optional, off by default)
+    hyde_document: str | None
+
     # Cache
     cache_hit: bool
     cached_answer: str | None

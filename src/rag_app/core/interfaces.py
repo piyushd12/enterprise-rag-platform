@@ -149,3 +149,37 @@ class TaskQueue(ABC):
         - 'error': str | None
         """
         ...
+
+
+class Reranker(ABC):
+    """Interface for cross-encoder rerankers (jointly score query+chunk pairs).
+
+    Intended to run over a wider candidate pool than the final generation
+    context needs: a bi-encoder's independent query/chunk embeddings are a
+    cheap but imprecise similarity signal, so retrieval widens the net and
+    the reranker narrows it back down to top_n before anything reaches the
+    LLM -- the LLM's context size never grows.
+    """
+
+    @abstractmethod
+    def rerank(
+        self, query: str, chunks: list[RetrievedChunk], top_n: int
+    ) -> list[RetrievedChunk]:
+        """Score each chunk against the query and return the best top_n, ranked."""
+        ...
+
+
+class KeywordSearchProvider(ABC):
+    """Interface for lexical/keyword search (e.g. BM25) over the corpus.
+
+    Complements dense vector search: independent query/chunk embeddings
+    capture semantic similarity but can under-weight distinctive exact
+    terms (proper nouns, specific phrases) that lexical scoring rewards
+    directly. Used as a second candidate source alongside dense retrieval,
+    with a Reranker choosing the final top_n from their combined pool.
+    """
+
+    @abstractmethod
+    def search(self, query: str, top_k: int) -> list[RetrievedChunk]:
+        """Return the top_k chunks by lexical relevance to the query."""
+        ...

@@ -12,40 +12,167 @@ Node topology (Phase 2):
 from __future__ import annotations
 
 from rag_app.caching.redis_cache import RedisCache
-from rag_app.core.interfaces import EmbeddingProvider, LLMProvider, VectorStore
+from rag_app.core.interfaces import (
+    EmbeddingProvider,
+    KeywordSearchProvider,
+    LLMProvider,
+    Reranker,
+    RetrievedChunk,
+    VectorStore,
+)
 from rag_app.rag.state import RAGState
+
+# How much wider than the final top_k to cast the retrieval net when a
+# reranker is active, and the hard ceiling on that width regardless of
+# top_k. A bi-encoder's independent query/chunk embeddings are a cheap but
+# imprecise similarity signal -- widening the candidate pool gives the
+# (more accurate, jointly-scored) cross-encoder reranker room to find a
+# correct chunk that the bi-encoder ranked outside a naive top-5 cutoff.
+RERANK_CANDIDATE_MULTIPLIER = 10
+RERANK_CANDIDATE_MAX = 50
+
+
+def make_hyde_expand_node(llm_provider: LLMProvider):
+    """Factory for the HyDE (Hypothetical Document Embeddings) node.
+
+    Generates a short hypothetical passage that would plausibly answer the
+    query, as if drawn directly from a reference document. Embedding this
+    passage instead of the raw question closes the vocabulary gap between
+    question-style queries (e.g. "what is the opening line of X") and
+    narrative/technical prose that never restates the question -- the
+    retrieve node uses hyde_document for embedding when present, falling
+    back to the raw query otherwise.
+    """
+
+    async def hyde_expand(state: RAGState) -> dict:
+        query = state["query"]
+        prompt = _build_hyde_prompt(query)
+        response = await llm_provider.generate(prompt)
+        return {"hyde_document": response.content}
+
+    return hyde_expand
 
 
 def make_retrieve_node(
     embedding_provider: EmbeddingProvider,
     vector_store: VectorStore,
+    use_reranker: bool = False,
+    keyword_search: KeywordSearchProvider | None = None,
 ):
-    """Factory for the retrieve node — closes over providers."""
+    """Factory for the retrieve node — closes over providers.
+
+    When use_reranker is True, searches a wider candidate pool than the
+    requested top_k (see RERANK_CANDIDATE_MULTIPLIER) so the rerank node
+    has room to promote a correct chunk the bi-encoder under-ranked.
+    reranked_chunks still passes through the raw (wide) results here --
+    the rerank node overwrites it with the trimmed, re-scored top_k.
+
+    When keyword_search is also provided (only meaningful alongside a
+    reranker -- otherwise nothing re-scores the merged set), BM25 keyword
+    search runs alongside dense search and the two candidate pools are
+    merged (deduped by source_id + chunk_index) before reranking. This
+    catches passages containing distinctive exact terms that dense
+    embeddings under-weight, which a wider dense-only search alone won't
+    reliably surface.
+    """
 
     async def retrieve(state: RAGState) -> dict:
-        """Embed the query and search the vector store."""
+        """Embed the query (or HyDE passage, if present) and search the vector store."""
         query = state["query"]
         top_k = state.get("top_k", 5)
         filters = state.get("filters")
 
-        # Embed query
-        query_embedding = embedding_provider.embed_query(query)
+        search_k = (
+            min(top_k * RERANK_CANDIDATE_MULTIPLIER, RERANK_CANDIDATE_MAX)
+            if use_reranker
+            else top_k
+        )
+
+        # When a HyDE passage is available, blend its embedding with the
+        # raw query's rather than replacing the query outright: the HyDE
+        # passage reads more like the source documents (helps close the
+        # question-vs-prose vocabulary gap), but it can also hallucinate a
+        # confidently wrong specific detail, which would otherwise steer
+        # retrieval entirely toward the wrong content. Averaging tempers
+        # a bad HyDE passage with the real question instead of fully
+        # trusting it. Both embeddings are local (FastEmbed), so this adds
+        # no extra API cost.
+        hyde_document = state.get("hyde_document")
+        if hyde_document:
+            query_embedding_only = embedding_provider.embed_query(query)
+            hyde_embedding = embedding_provider.embed_query(hyde_document)
+            query_embedding = [
+                (a + b) / 2 for a, b in zip(query_embedding_only, hyde_embedding)
+            ]
+        else:
+            query_embedding = embedding_provider.embed_query(query)
 
         # Search vector store
         chunks = await vector_store.search(
             query_vector=query_embedding,
-            top_k=top_k,
+            top_k=search_k,
             filters=filters,
         )
+
+        if keyword_search is not None:
+            bm25_chunks = keyword_search.search(query, top_k=search_k)
+            chunks = _merge_dedup(chunks, bm25_chunks)
 
         return {
             "query_embedding": query_embedding,
             "retrieved_chunks": chunks,
-            # Pass-through for rerank (Phase 3 will replace this)
-            "reranked_chunks": chunks,
+            # Pass-through when no rerank node follows; the rerank node
+            # (when present) overwrites this with the trimmed, re-scored set.
+            "reranked_chunks": chunks[:top_k],
         }
 
     return retrieve
+
+
+def _merge_dedup(
+    primary: list[RetrievedChunk], secondary: list[RetrievedChunk]
+) -> list[RetrievedChunk]:
+    """Union two candidate lists, deduped by (source_id, chunk_index).
+
+    Chunks missing that metadata (shouldn't happen for ingested content,
+    but keeps this robust) fall back to deduping on content instead.
+    """
+
+    def key(chunk: RetrievedChunk) -> tuple:
+        meta = chunk.metadata
+        if "source_id" in meta and "chunk_index" in meta:
+            return (meta["source_id"], meta["chunk_index"])
+        return (chunk.content,)
+
+    seen = {key(c) for c in primary}
+    merged = list(primary)
+    for chunk in secondary:
+        k = key(chunk)
+        if k not in seen:
+            seen.add(k)
+            merged.append(chunk)
+    return merged
+
+
+def make_rerank_node(reranker: Reranker):
+    """Factory for the rerank node — closes over the reranker.
+
+    Re-scores the wide candidate pool retrieve produced with a cross-encoder
+    (query and chunk jointly encoded, a much finer-grained relevance signal
+    than the bi-encoder's independent embeddings) and trims back down to the
+    originally requested top_k before generation ever sees it -- generation's
+    input size is unaffected by how wide the candidate pool was.
+    """
+
+    async def rerank(state: RAGState) -> dict:
+        query = state["query"]
+        top_k = state.get("top_k", 5)
+        candidates = state.get("retrieved_chunks", [])
+
+        reranked = reranker.rerank(query, candidates, top_n=top_k)
+        return {"reranked_chunks": reranked}
+
+    return rerank
 
 
 def make_generate_node(llm_provider: LLMProvider):
@@ -137,6 +264,35 @@ def _redirect_after_cache_lookup(state: RAGState) -> str:
     if state.get("cache_hit"):
         return "end"
     return "retrieve"
+
+
+def _build_hyde_prompt(query: str) -> str:
+    """Build the HyDE prompt: ask for a plausible source passage, not an answer to the user.
+
+    Deliberately does NOT ask the model to "write a plausible/generic passage"
+    when uncertain -- that phrasing invites confident-sounding fabrication of
+    specific facts (causes, motivations, relationships) it doesn't actually
+    know, which then drives retrieval toward the wrong content entirely.
+    Instead it asks for restatement of the question's subject matter in
+    source-appropriate style, explicitly discouraging invented specifics.
+    """
+    return f"""Write a short passage (2-4 sentences) in the style of the kind of \
+document this question is about (narrative prose for a novel, encyclopedic prose \
+for a reference article, technical prose for a research paper, etc). Restate the \
+question's subject and key terms as declarative statements, using vocabulary and \
+phrasing typical of that source material.
+
+Do NOT invent specific facts, causes, motivations, or plot details you are not \
+confident are correct. If you don't know a specific detail the question asks for \
+(e.g. why something happened, or a precise figure), describe the general topic \
+and its context instead of guessing a specific answer -- an unconfident but \
+honest passage is far more useful here than a confident but wrong one.
+
+Do not address the reader, and do not mention that this is hypothetical.
+
+Question: {query}
+
+Passage:"""
 
 
 def _build_rag_prompt(query: str, context: str) -> str:
