@@ -28,6 +28,17 @@ function escapeHtml(str) {
 }
 
 /**
+ * Like escapeHtml, but also safe inside a quoted HTML attribute value.
+ * The textContent round-trip escapeHtml() uses doesn't touch quote
+ * characters (they're not special in text-node content), so a value
+ * like `foo".onmouseover="..` would break out of a `title="${...}"`
+ * attribute if escapeHtml() alone were used there.
+ */
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/**
  * Escape text, then apply a tiny bit of markup: "[Source N]" citations,
  * bold emphasis, and inline code (LLM answers commonly use bare markdown
  * for these, which reads as broken if left as literal asterisks/backticks).
@@ -102,7 +113,7 @@ function renderDocuments(docs) {
     .map(
       (d) => `
       <div class="doc-row">
-        <div class="doc-row-name" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+        <div class="doc-row-name" title="${escapeAttr(d.filename)}">${escapeHtml(d.filename)}</div>
         <div class="doc-row-meta">
           <span class="doc-row-type">${escapeHtml(d.doc_type)}</span>
           <span>${d.chunk_count} chunk${d.chunk_count === 1 ? "" : "s"}</span>
