@@ -1,6 +1,6 @@
-.PHONY: up down dev worker ui seed eval lint test
+.PHONY: up down dev worker seed eval lint test
 
-# Start the full stack (Qdrant, Redis, Celery worker, FastAPI, Streamlit)
+# Start the full stack (Qdrant, Redis, Celery worker, FastAPI + chat UI)
 up:
 	docker compose up -d --build
 
@@ -8,17 +8,13 @@ up:
 down:
 	docker compose down
 
-# Run FastAPI dev server
+# Run FastAPI dev server (serves the chat UI at http://localhost:8000)
 dev:
 	uv run uvicorn rag_app.main:app --reload --reload-dir src/rag_app --host 0.0.0.0 --port 8000
 
 # Run Celery worker
 worker:
 	uv run celery -A rag_app.queue.celery_app worker --loglevel=info
-
-# Run Streamlit UI
-ui:
-	uv run streamlit run ui/app.py --server.port 8501
 
 # Seed vector store with sample documents
 seed:

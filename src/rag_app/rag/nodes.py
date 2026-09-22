@@ -175,6 +175,20 @@ def make_rerank_node(reranker: Reranker):
     return rerank
 
 
+def build_context(chunks: list[RetrievedChunk]) -> str:
+    """Build the numbered [Source N] context block generate() prompts with.
+
+    Also used directly by the /chat/stream route, which streams tokens
+    from the LLM provider itself rather than going through the generate
+    node (LangGraph nodes return one state update, not a token stream).
+    """
+    context_parts = []
+    for i, chunk in enumerate(chunks):
+        source = chunk.metadata.get("filename", chunk.metadata.get("source_id", "unknown"))
+        context_parts.append(f"[Source {i + 1}: {source}]\n{chunk.content}")
+    return "\n\n---\n\n".join(context_parts)
+
+
 def make_generate_node(llm_provider: LLMProvider):
     """Factory for the generate node — closes over the LLM provider."""
 
@@ -183,17 +197,7 @@ def make_generate_node(llm_provider: LLMProvider):
         query = state["query"]
         # Use reranked chunks if available, otherwise retrieved
         chunks = state.get("reranked_chunks") or state.get("retrieved_chunks", [])
-
-        # Build context from chunks
-        context_parts = []
-        for i, chunk in enumerate(chunks):
-            source = chunk.metadata.get("filename", chunk.metadata.get("source_id", "unknown"))
-            context_parts.append(f"[Source {i + 1}: {source}]\n{chunk.content}")
-
-        context = "\n\n---\n\n".join(context_parts)
-
-        # Build prompt
-        prompt = _build_rag_prompt(query, context)
+        prompt = _build_rag_prompt(query, build_context(chunks))
 
         # Generate
         response = await llm_provider.generate(prompt)

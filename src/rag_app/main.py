@@ -4,23 +4,28 @@ FastAPI application factory.
 - Configures Logfire and LangSmith at startup
 - Auto-instruments FastAPI with Logfire
 - Registers all route modules
+- Serves the static chat UI (src/rag_app/static/) at "/"
 - Ensures Qdrant collection exists on startup
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import logfire
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from rag_app.api.dependencies import get_keyword_search, get_obs, get_vector_store
 from rag_app.api.rate_limit import limiter
-from rag_app.api.routes import chat, evaluate, health, ingest
+from rag_app.api.routes import chat, documents, evaluate, health, ingest
 from rag_app.observability import configure_langsmith, configure_logfire
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 @asynccontextmanager
@@ -78,6 +83,11 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(ingest.router)
     app.include_router(evaluate.router)
+    app.include_router(documents.router)
+
+    # Serve the chat UI. Mounted last (and at "/") so it only catches
+    # requests the API routes above didn't already claim.
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
     return app
 

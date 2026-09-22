@@ -10,9 +10,9 @@ and makes every component independently testable and swappable.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # Data transfer objects
@@ -50,6 +50,18 @@ class LLMProvider(ABC):
     @abstractmethod
     async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:
         """Generate a completion for the given prompt."""
+        ...
+
+    @abstractmethod
+    def stream(self, prompt: str, meta: dict[str, Any]) -> AsyncIterator[str]:
+        """Stream a completion token-by-token for the given prompt.
+
+        Fills `meta` in place (provider, model, latency_ms, tokens_used)
+        as streaming finishes -- a plain dict rather than a return value
+        because an async generator's `return` can't carry a value out to
+        an `async for` caller, and `meta` is caller-owned per call so
+        there's no shared-state race across concurrent requests.
+        """
         ...
 
 
@@ -108,6 +120,12 @@ class VectorStore(ABC):
     @abstractmethod
     async def ensure_collection(self) -> None:
         """Create the collection/index if it does not already exist."""
+        ...
+
+    @abstractmethod
+    async def list_sources(self) -> list[dict[str, Any]]:
+        """List every distinct source document currently stored, aggregated
+        by source_id (filename, doc_type, ingested_at, chunk_count)."""
         ...
 
 

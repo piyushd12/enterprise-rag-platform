@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Chat</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <span class="brand-dot" id="health-dot" title="Checking..."></span>
+          <span class="brand-name">RAG&nbsp;Chat</span>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Add documents</div>
+        <label class="dropzone" id="dropzone" for="file-input">
+          <input type="file" id="file-input" accept=".pdf,.txt,.md" hidden>
+          <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Drop a file or <span class="dropzone-link">browse</span></span>
+          <span class="dropzone-hint">PDF, TXT, or MD &middot; 20MB max</span>
+        </label>
+        <div class="upload-list" id="upload-list"></div>
+      </div>
+
+      <div class="sidebar-section sidebar-section-grow">
+        <div class="sidebar-label">
+          Documents
+          <span class="doc-count" id="doc-count"></span>
+        </div>
+        <div class="doc-list" id="doc-list">
+          <div class="empty-hint">No documents ingested yet.</div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <a href="https://smith.langchain.com" target="_blank" rel="noopener" class="footer-link">
+          LangSmith <span class="ext-arrow">&#8599;</span>
+        </a>
+        <a href="https://logfire.pydantic.dev" target="_blank" rel="noopener" class="footer-link">
+          Logfire <span class="ext-arrow">&#8599;</span>
+        </a>
+        <a href="/docs" target="_blank" rel="noopener" class="footer-link">
+          API Docs <span class="ext-arrow">&#8599;</span>
+        </a>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <div class="messages" id="messages">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-state-title">Ask something about your documents</div>
+          <div class="empty-state-hint">Retrieval uses dense search + BM25 keyword search, re-ranked by a cross-encoder before the model answers.</div>
+        </div>
+      </div>
+
+      <form class="composer" id="composer">
+        <div class="composer-row">
+          <textarea
+            id="query-input"
+            class="composer-input"
+            placeholder="Ask a question..."
+            rows="1"
+            maxlength="2000"
+          ></textarea>
+          <button type="submit" class="composer-send" id="send-btn" aria-label="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="composer-meta">
+          <label class="top-k-control">
+            top_k
+            <input type="number" id="top-k-input" value="5" min="1" max="20">
+          </label>
+          <span class="composer-hint" id="composer-status"></span>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

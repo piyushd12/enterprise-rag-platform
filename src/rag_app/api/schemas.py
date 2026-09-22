@@ -1,8 +1,8 @@
 """
 Pydantic request/response schemas for the FastAPI endpoints.
 
-These schemas define the API contract — they are independent of any
-concrete implementation and can be used by the Streamlit client too.
+These schemas define the API contract, independent of any concrete
+implementation.
 """
 
 from __future__ import annotations
@@ -104,6 +104,27 @@ class EvalResponse(BaseModel):
     task_id: str
     status: str = "queued"
     message: str = "Evaluation task enqueued"
+
+
+# ---------------------------------------------------------------------------
+# /documents
+# ---------------------------------------------------------------------------
+
+
+class DocumentInfo(BaseModel):
+    """A single ingested source document, aggregated from its chunks."""
+
+    source_id: str
+    filename: str
+    doc_type: str
+    ingested_at: str
+    chunk_count: int
+
+
+class DocumentsResponse(BaseModel):
+    """Response body for GET /documents."""
+
+    documents: list[DocumentInfo]
 
 
 # ---------------------------------------------------------------------------

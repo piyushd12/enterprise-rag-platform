@@ -24,7 +24,6 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "redis>=8.1.0",
     "slowapi>=0.1.10",
-    "streamlit>=1.62.0",
     "uvicorn[standard]>=0.52.3",
 ]
 

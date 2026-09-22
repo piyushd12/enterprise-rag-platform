@@ -7,6 +7,7 @@ Uses langchain-openai with OpenRouter's OpenAI-compatible endpoint.
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 from langchain_openai import ChatOpenAI
@@ -49,3 +50,19 @@ class OpenRouterProvider(LLMProvider):
             tokens_used=tokens,
             latency_ms=round(latency, 2),
         )
+
+    async def stream(self, prompt: str, meta: dict[str, Any]) -> AsyncIterator[str]:
+        """Stream a completion token-by-token via OpenRouter."""
+        start = time.perf_counter()
+        tokens_used = 0
+
+        async for chunk in self._llm.astream(prompt):
+            if chunk.usage_metadata:
+                tokens_used = chunk.usage_metadata.get("total_tokens", tokens_used)
+            if chunk.content:
+                yield chunk.content
+
+        meta["provider"] = self.PROVIDER_NAME
+        meta["model"] = self._model_name
+        meta["tokens_used"] = tokens_used
+        meta["latency_ms"] = round((time.perf_counter() - start) * 1000, 2)

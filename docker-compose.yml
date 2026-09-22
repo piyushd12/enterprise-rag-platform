@@ -95,25 +95,6 @@ services:
       - qdrant
     restart: "no"
 
-  ui:
-    build:
-      context: .
-      dockerfile: Dockerfile.ui
-    container_name: rag-ui
-    ports:
-      - "8501:8501"
-    volumes:
-      - type: bind
-        source: ./ui
-        target: /app/ui
-        bind:
-          create_host_path: false
-    environment:
-      - API_BASE_URL=http://api:8000
-    depends_on:
-      - api
-    restart: "no"
-
 volumes:
   qdrant_data:
   redis_data:

@@ -152,6 +152,31 @@ class QdrantStore(VectorStore):
             for hit in results.points
         ]
 
+    async def list_sources(self) -> list[dict[str, Any]]:
+        """List every distinct source document, aggregated by source_id."""
+        points, _ = self._client.scroll(
+            collection_name=self._collection_name,
+            limit=10_000,
+            with_payload=True,
+        )
+        by_source: dict[str, dict[str, Any]] = {}
+        for point in points:
+            source_id = point.payload.get("source_id", "")
+            if not source_id:
+                continue
+            entry = by_source.setdefault(
+                source_id,
+                {
+                    "source_id": source_id,
+                    "filename": point.payload.get("filename", ""),
+                    "doc_type": point.payload.get("doc_type", ""),
+                    "ingested_at": point.payload.get("ingested_at", ""),
+                    "chunk_count": 0,
+                },
+            )
+            entry["chunk_count"] += 1
+        return sorted(by_source.values(), key=lambda d: d["ingested_at"], reverse=True)
+
     async def delete_by_source(self, source_id: str) -> None:
         """Delete all chunks belonging to a source document."""
         self._client.delete(

@@ -19,7 +19,7 @@ architecture.
 | Cache + Broker | Redis |
 | Task Queue | Celery |
 | Backend | FastAPI |
-| Frontend | Streamlit |
+| Frontend | Static HTML/CSS/JS chat UI, served by FastAPI |
 | Deployment | Docker Compose |
 | LLM Observability | LangSmith |
 | Infra Observability | Logfire |
@@ -69,12 +69,12 @@ cp .env.example .env   # fill in your API keys
 make up                 # or: docker compose up -d --build
 ```
 
-This builds and starts all five services — Qdrant, Redis, the Celery
-worker, FastAPI, and Streamlit — wired together on one Docker network.
-Once it's up:
+This builds and starts all four services — Qdrant, Redis, the Celery
+worker, and FastAPI — wired together on one Docker network. FastAPI also
+serves the chat UI directly, so there's a single entry point:
 
-- UI: http://localhost:8501
-- API: http://localhost:8000 (docs at `/docs`)
+- Chat UI: http://localhost:8000
+- API docs: http://localhost:8000/docs
 
 Seed the sample documents once the stack is up:
 
@@ -94,9 +94,8 @@ editing code:
 uv venv && uv sync
 docker compose up -d qdrant redis   # just the two stateful dependencies
 make seed     # seed sample documents
-make dev      # FastAPI, with --reload
+make dev      # FastAPI (serves the chat UI too), with --reload
 make worker   # in another terminal: Celery worker
-make ui       # in another terminal: Streamlit UI
 ```
 
 ### Other commands
@@ -135,6 +134,16 @@ curl -X POST http://localhost:8000/chat \
 }
 ```
 
+`POST /chat/stream` streams the same pipeline as Server-Sent Events —
+tokens arrive as they're generated instead of waiting for the full
+answer, cutting perceived latency during the multi-second generation
+phase. A cache hit still returns instantly as one event rather than
+being drawn out token-by-token. The chat UI uses this endpoint; `/chat`
+remains available for non-streaming callers.
+
+`GET /documents` lists every ingested document (aggregated by source),
+powering the UI's document list.
+
 Document ingestion (`POST /ingest`) and evaluation runs (`POST /evaluate`)
 are asynchronous — both return a Celery task ID immediately, pollable at
 `GET /ingest/status/{task_id}` and `GET /evaluate/status/{task_id}`
@@ -144,7 +153,7 @@ respectively.
 
 ```mermaid
 flowchart LR
-    UI[Streamlit UI] --> API[FastAPI]
+    UI[Chat UI] --> API[FastAPI]
 
     subgraph Sync["/chat"]
         API --> Cache[(Redis Cache)]

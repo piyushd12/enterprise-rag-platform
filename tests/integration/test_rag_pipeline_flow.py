@@ -58,6 +58,12 @@ class _StubLLM(LLMProvider):
             latency_ms=1.0,
         )
 
+    async def stream(self, prompt: str, meta: dict):
+        self.last_prompt = prompt
+        meta["provider"] = "stub"
+        meta["model"] = "stub-model"
+        yield "The mitochondria is the powerhouse of the cell."
+
 
 @pytest.fixture
 def obs() -> ObservabilityProvider:
