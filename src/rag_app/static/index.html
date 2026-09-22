@@ -17,8 +17,21 @@
         </div>
       </div>
 
+      <button type="button" class="new-chat-btn" id="new-chat-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14" stroke-linecap="round"/>
+        </svg>
+        New chat
+      </button>
+
+      <div class="sidebar-section sidebar-section-grow">
+        <div class="sidebar-label">Chats</div>
+        <div class="chat-list" id="chat-list">
+          <div class="empty-hint">No chats yet.</div>
+        </div>
+      </div>
+
       <div class="sidebar-section">
-        <div class="sidebar-label">Add documents</div>
         <label class="dropzone" id="dropzone" for="file-input">
           <input type="file" id="file-input" accept=".pdf,.txt,.md" hidden>
           <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -31,12 +44,12 @@
         <div class="upload-list" id="upload-list"></div>
       </div>
 
-      <div class="sidebar-section sidebar-section-grow">
-        <div class="sidebar-label">
-          Documents
+      <div class="sidebar-section">
+        <button type="button" class="docs-toggle" id="docs-toggle">
+          <span class="chevron">&#9656;</span> Documents
           <span class="doc-count" id="doc-count"></span>
-        </div>
-        <div class="doc-list" id="doc-list">
+        </button>
+        <div class="doc-list" id="doc-list" hidden>
           <div class="empty-hint">No documents ingested yet.</div>
         </div>
       </div>

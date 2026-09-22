@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from rag_app.api.dependencies import (
     get_cache,
+    get_chat_store,
     get_embedding_provider,
     get_keyword_search,
     get_llm_provider,
@@ -23,6 +24,7 @@ from rag_app.api.dependencies import (
 from rag_app.api.rate_limit import limiter
 from rag_app.api.schemas import ChatRequest, ChatResponse, SourceChunk
 from rag_app.core.interfaces import (
+    ChatStore,
     EmbeddingProvider,
     KeywordSearchProvider,
     LLMProvider,
@@ -38,6 +40,34 @@ router = APIRouter(tags=["chat"])
 
 def _sse(event_type: str, data: dict) -> str:
     return f"data: {json.dumps({'type': event_type, **data})}\n\n"
+
+
+async def _generate_chat_title(llm_provider: LLMProvider, query: str) -> str:
+    """Summarize a chat's first question into a short title, ChatGPT/Claude-
+    style. Falls back to a truncated query on any LLM failure -- title
+    generation must never be the reason a chat fails to start."""
+    prompt = (
+        "Summarize the following user question into a short chat title "
+        '(3-6 words, no quotes, no trailing punctuation).\n\nQuestion: "'
+        f'{query}"\n\nTitle:'
+    )
+    try:
+        response = await llm_provider.generate(prompt)
+        title = response.content.strip().strip('"').strip("'")
+        return title[:60] or query[:60]
+    except Exception:
+        return query[:60]
+
+
+def _format_history(messages: list[dict], limit: int = 6) -> str:
+    """Render the last `limit` stored messages as a transcript block, so
+    generation can resolve follow-ups against earlier turns in the same
+    chat. Empty string (no block at all) when there's no prior history."""
+    recent = messages[-limit:]
+    if not recent:
+        return ""
+    lines = [f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}" for m in recent]
+    return "Previous conversation:\n" + "\n".join(lines) + "\n"
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -152,8 +182,10 @@ async def chat_stream(
     cache=Depends(get_cache),
     reranker: Reranker = Depends(get_reranker),
     keyword_search: KeywordSearchProvider = Depends(get_keyword_search),
+    chat_store: ChatStore = Depends(get_chat_store),
 ) -> StreamingResponse:
-    """Same pipeline as /chat, streamed as Server-Sent Events.
+    """Same pipeline as /chat, streamed as Server-Sent Events, within a
+    persisted chat session.
 
     Cache lookup and retrieval/reranking reuse the exact same node
     factory functions /chat uses. Only generation differs: tokens are
@@ -168,19 +200,50 @@ async def chat_stream(
     (that instrumentation lives on the LangChain chat model itself), just
     not nested under a single parent "rag_pipeline" run the way /chat's
     graph.ainvoke() is.
+
+    Chat sessions: if `body.chat_id` is omitted (or unknown), a new chat
+    is created with a title generated from this first question (one extra
+    short LLM call, made synchronously before generation starts -- so new
+    chats pay a small latency cost existing chats don't). Every message is
+    persisted to the chat's history, and recent turns from that history
+    are fed back into the generation prompt so follow-up questions can be
+    resolved against what was already discussed. Retrieval itself is not
+    history-aware -- only generation sees prior turns.
     """
     request_id = str(uuid.uuid4())
     start = time.perf_counter()
 
     async def event_stream():
         with obs.span("chat.stream.request", {"request_id": request_id, "query": body.query}):
+            existing_chat = await chat_store.get_chat(body.chat_id) if body.chat_id else None
+            history_messages = existing_chat["messages"] if existing_chat else []
+            if existing_chat:
+                chat_id = body.chat_id
+            else:
+                title = await _generate_chat_title(llm_provider, body.query)
+                chat_id = await chat_store.create_chat(title)
+
+            await chat_store.append_message(
+                chat_id, {"role": "user", "content": body.query, "ts": time.time()}
+            )
+
             cached = await cache.get_answer(body.query) if cache else None
             if cached is not None:
+                await chat_store.append_message(
+                    chat_id,
+                    {
+                        "role": "assistant",
+                        "content": cached["answer"],
+                        "sources": cached.get("sources", []),
+                        "ts": time.time(),
+                    },
+                )
                 yield _sse("answer", {"content": cached["answer"]})
                 yield _sse(
                     "done",
                     {
                         "request_id": request_id,
+                        "chat_id": chat_id,
                         "sources": cached.get("sources", []),
                         "cached": True,
                         "llm_provider": "cache",
@@ -202,7 +265,8 @@ async def chat_stream(
                 state.update(await make_rerank_node(reranker)(state))
 
             chunks = state.get("reranked_chunks") or state.get("retrieved_chunks", [])
-            prompt = _build_rag_prompt(body.query, build_context(chunks))
+            history = _format_history(history_messages)
+            prompt = _build_rag_prompt(body.query, build_context(chunks), history)
 
             meta: dict = {}
             full_answer = ""
@@ -227,10 +291,23 @@ async def chat_stream(
             if cache:
                 await cache.set_answer(body.query, full_answer, sources)
 
+            await chat_store.append_message(
+                chat_id,
+                {
+                    "role": "assistant",
+                    "content": full_answer,
+                    "sources": sources,
+                    "llm_provider": meta.get("provider", ""),
+                    "llm_model": meta.get("model", ""),
+                    "ts": time.time(),
+                },
+            )
+
             yield _sse(
                 "done",
                 {
                     "request_id": request_id,
+                    "chat_id": chat_id,
                     "sources": sources,
                     "cached": False,
                     "llm_provider": meta.get("provider", ""),

@@ -22,7 +22,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from rag_app.api.dependencies import get_keyword_search, get_obs, get_vector_store
 from rag_app.api.rate_limit import limiter
-from rag_app.api.routes import chat, documents, evaluate, health, ingest
+from rag_app.api.routes import chat, chats, documents, evaluate, health, ingest
 from rag_app.observability import configure_langsmith, configure_logfire
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -84,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest.router)
     app.include_router(evaluate.router)
     app.include_router(documents.router)
+    app.include_router(chats.router)
 
     # Serve the chat UI. Mounted last (and at "/") so it only catches
     # requests the API routes above didn't already claim.

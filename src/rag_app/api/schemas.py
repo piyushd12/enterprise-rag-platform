@@ -22,6 +22,9 @@ class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="The user's question")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of chunks to retrieve")
     filters: dict | None = Field(default=None, description="Optional payload filters, e.g. {'doc_type': 'pdf'}")
+    chat_id: str | None = Field(
+        default=None, description="Existing chat to continue; omit to start a new chat"
+    )
 
 
 class SourceChunk(BaseModel):
@@ -125,6 +128,44 @@ class DocumentsResponse(BaseModel):
     """Response body for GET /documents."""
 
     documents: list[DocumentInfo]
+
+
+# ---------------------------------------------------------------------------
+# /chats
+# ---------------------------------------------------------------------------
+
+
+class ChatSummary(BaseModel):
+    """One entry in the chat sidebar list."""
+
+    id: str
+    title: str
+    updated_at: str
+
+
+class ChatListResponse(BaseModel):
+    """Response body for GET /chats."""
+
+    chats: list[ChatSummary]
+
+
+class StoredChatMessage(BaseModel):
+    """One message in a chat's persisted history."""
+
+    role: Literal["user", "assistant"]
+    content: str
+    sources: list[dict] | None = None
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    ts: float | None = None
+
+
+class ChatDetailResponse(BaseModel):
+    """Response body for GET /chats/{chat_id}."""
+
+    id: str
+    title: str
+    messages: list[StoredChatMessage]
 
 
 # ---------------------------------------------------------------------------

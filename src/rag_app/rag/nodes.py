@@ -299,13 +299,29 @@ Question: {query}
 Passage:"""
 
 
-def _build_rag_prompt(query: str, context: str) -> str:
-    """Build the RAG prompt with context and query."""
-    return f"""You are a helpful assistant that answers questions based on the provided context.
-Use ONLY the information from the context below to answer the question.
-If the context doesn't contain enough information to answer, say so clearly.
-Cite the source numbers [Source N] when using information from the context.
+def _build_rag_prompt(query: str, context: str, history: str = "") -> str:
+    """Build the RAG prompt with context and query.
 
+    `history` (optional) is a preformatted transcript of recent turns in
+    the same chat, prepended so follow-up questions ("what about last
+    year?") can be resolved against what was already discussed. Retrieval
+    itself is not history-aware -- only generation sees prior turns.
+
+    The instructions explicitly permit using the history section, not just
+    the document Context -- an earlier version said "use ONLY the context
+    below," which told the model to disregard the history block even
+    though it was present in the prompt, so it correctly answered
+    reference-resolution questions ("what about last year?") only by
+    accident while flatly refusing direct questions about the conversation
+    itself ("what did I ask earlier?").
+    """
+    history_block = f"\n{history}\n" if history else ""
+    return f"""You are a helpful assistant. Answer using the document context below, \
+grounding factual claims about the documents in it and citing source numbers \
+[Source N] when you do. If a question is about the conversation itself \
+(e.g. what was asked earlier), answer from the Previous conversation section \
+instead. If neither has enough information to answer, say so clearly.
+{history_block}
 Context:
 {context}
 

@@ -148,6 +148,32 @@ class CacheProvider(ABC):
         ...
 
 
+class ChatStore(ABC):
+    """Interface for persisted multi-turn chat sessions (separate from the
+    answer cache -- this is durable conversation history, not a TTL'd
+    performance optimization)."""
+
+    @abstractmethod
+    async def create_chat(self, title: str) -> str:
+        """Create a new chat with the given title, returning its id."""
+        ...
+
+    @abstractmethod
+    async def list_chats(self) -> list[dict[str, Any]]:
+        """List all chats as {id, title, updated_at}, most recent first."""
+        ...
+
+    @abstractmethod
+    async def get_chat(self, chat_id: str) -> dict[str, Any] | None:
+        """Get a chat's {id, title, messages}, or None if it doesn't exist."""
+        ...
+
+    @abstractmethod
+    async def append_message(self, chat_id: str, message: dict[str, Any]) -> None:
+        """Append one message ({role, content, ...}) to a chat's history."""
+        ...
+
+
 class TaskQueue(ABC):
     """Interface for async task queue (Celery, RQ, etc.)."""
 

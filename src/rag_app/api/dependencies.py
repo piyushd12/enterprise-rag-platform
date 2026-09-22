@@ -12,6 +12,7 @@ from functools import lru_cache
 
 from rag_app.config.settings import settings
 from rag_app.core.interfaces import (
+    ChatStore,
     EmbeddingProvider,
     KeywordSearchProvider,
     LLMProvider,
@@ -100,3 +101,10 @@ def get_queue() -> TaskQueue:
     from rag_app.queue.redis_queue import RedisQueue
     obs = get_obs()
     return RedisQueue(obs=obs)
+
+
+@lru_cache
+def get_chat_store() -> ChatStore:
+    """Singleton ChatStore (Redis-backed, persisted chat sessions)."""
+    from rag_app.caching.redis_chat_store import RedisChatStore
+    return RedisChatStore()

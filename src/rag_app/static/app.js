@@ -14,9 +14,13 @@ const fileInput = document.getElementById("file-input");
 const uploadListEl = document.getElementById("upload-list");
 const docListEl = document.getElementById("doc-list");
 const docCountEl = document.getElementById("doc-count");
+const docsToggle = document.getElementById("docs-toggle");
+const newChatBtn = document.getElementById("new-chat-btn");
+const chatListEl = document.getElementById("chat-list");
 
 let requestInFlight = false;
 let messageIdCounter = 0;
+let currentChatId = null;
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -182,6 +186,12 @@ function renderDocuments(docs) {
 
 refreshDocuments();
 
+docsToggle.addEventListener("click", () => {
+  const nowHidden = !docListEl.hasAttribute("hidden");
+  docListEl.toggleAttribute("hidden", nowHidden);
+  docsToggle.classList.toggle("open", !nowHidden);
+});
+
 // ---------------------------------------------------------------------------
 // Upload
 // ---------------------------------------------------------------------------
@@ -255,6 +265,87 @@ async function pollIngestStatus(taskId, row) {
   };
   poll();
 }
+
+// ---------------------------------------------------------------------------
+// Chat sessions (sidebar)
+// ---------------------------------------------------------------------------
+
+async function loadChats() {
+  try {
+    const res = await fetch("/chats");
+    if (!res.ok) return;
+    const data = await res.json();
+    renderChats(data.chats || []);
+  } catch {
+    // Leave the last-known list in place.
+  }
+}
+
+function renderChats(chats) {
+  if (chats.length === 0) {
+    chatListEl.innerHTML = '<div class="empty-hint">No chats yet.</div>';
+    return;
+  }
+  chatListEl.innerHTML = chats
+    .map(
+      (c) => `
+      <button type="button" class="chat-row${c.id === currentChatId ? " active" : ""}"
+        data-chat-id="${escapeAttr(c.id)}" title="${escapeAttr(c.title)}">${escapeHtml(c.title)}</button>`
+    )
+    .join("");
+}
+
+function highlightActiveChat(chatId) {
+  chatListEl.querySelectorAll(".chat-row").forEach((row) => {
+    row.classList.toggle("active", row.dataset.chatId === chatId);
+  });
+}
+
+/** Remove message rows but keep the reusable #empty-state node in the DOM. */
+function clearMessages() {
+  messagesEl.querySelectorAll(".msg-row").forEach((el) => el.remove());
+  emptyStateEl.style.display = "";
+}
+
+async function openChat(chatId) {
+  if (requestInFlight || chatId === currentChatId) return;
+  try {
+    const res = await fetch(`/chats/${chatId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    currentChatId = data.id;
+    clearMessages();
+    for (const msg of data.messages || []) {
+      if (msg.role === "user") {
+        addUserMessage(msg.content);
+      } else {
+        renderCompleteAssistantMessage(msg.content, {
+          sources: msg.sources,
+          llm_provider: msg.llm_provider,
+          llm_model: msg.llm_model,
+        });
+      }
+    }
+    highlightActiveChat(chatId);
+  } catch {
+    // Leave the current view as-is on failure.
+  }
+}
+
+chatListEl.addEventListener("click", (e) => {
+  const row = e.target.closest(".chat-row");
+  if (!row) return;
+  openChat(row.dataset.chatId);
+});
+
+newChatBtn.addEventListener("click", () => {
+  if (requestInFlight) return;
+  currentChatId = null;
+  clearMessages();
+  highlightActiveChat(null);
+});
+
+loadChats();
 
 // ---------------------------------------------------------------------------
 // Chat
@@ -334,6 +425,14 @@ function finalizeAssistantMessage(bubbleEl, { sources, cached, llm_provider, llm
   scrollToBottom();
 }
 
+/** Render a fully-known assistant message in one shot (no streaming) --
+ * used to replay a stored chat's history when it's opened. */
+function renderCompleteAssistantMessage(content, meta) {
+  const bubble = addAssistantPlaceholder();
+  bubble.innerHTML = renderAnswerHtml(content, bubble.dataset.msgId);
+  finalizeAssistantMessage(bubble, meta);
+}
+
 async function sendMessage(query) {
   requestInFlight = true;
   sendBtn.disabled = true;
@@ -348,7 +447,7 @@ async function sendMessage(query) {
     const res = await fetch("/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, top_k: Number(topKInput.value) || 5 }),
+      body: JSON.stringify({ query, top_k: Number(topKInput.value) || 5, chat_id: currentChatId }),
     });
 
     if (res.status === 429) {
@@ -388,6 +487,10 @@ async function sendMessage(query) {
           bubble.innerHTML = renderAnswerHtml(fullText, bubble.dataset.msgId);
         } else if (payload.type === "done") {
           finalizeAssistantMessage(bubble, payload);
+          if (payload.chat_id) {
+            currentChatId = payload.chat_id;
+            loadChats().then(() => highlightActiveChat(currentChatId));
+          }
         } else if (payload.type === "error") {
           bubble.classList.add("error");
           bubble.textContent = payload.message || "Something went wrong.";
