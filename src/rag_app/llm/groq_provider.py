@@ -27,7 +27,10 @@ class GroqProvider(LLMProvider):
             model=self._model_name,
             api_key=settings.groq_api_key,
             temperature=0,
-            max_tokens=1024,
+            # 1024 was too tight -- observed truncating mid-answer on
+            # table-formatted responses (a malformed final row rather
+            # than a clean cutoff).
+            max_tokens=2048,
         )
 
     async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:

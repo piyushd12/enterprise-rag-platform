@@ -16,6 +16,7 @@ const docListEl = document.getElementById("doc-list");
 const docCountEl = document.getElementById("doc-count");
 
 let requestInFlight = false;
+let messageIdCounter = 0;
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -39,20 +40,75 @@ function escapeAttr(str) {
 }
 
 /**
- * Escape text, then apply a tiny bit of markup: "[Source N]" citations,
- * bold emphasis, and inline code (LLM answers commonly use bare markdown
- * for these, which reads as broken if left as literal asterisks/backticks).
+ * Escape text, then apply a tiny bit of markup: "[Source N]" citations
+ * (as a clickable button, wired up to jump to that source further down
+ * the same message -- see the delegated click handler near the bottom
+ * of this file), bold emphasis, and inline code (LLM answers commonly
+ * use bare markdown for these, which reads as broken if left as literal
+ * asterisks/backticks).
  * Safe to assign to innerHTML: escapeHtml() runs first, so the only
  * markup ever introduced is the literal tags this function adds itself --
- * no raw LLM/user content reaches the DOM unescaped.
+ * no raw LLM/user content reaches the DOM unescaped. Citation numbers
+ * come from a regex-matched \d+, never from unescaped LLM text, so they
+ * can't carry markup either.
  */
-function renderAnswerHtml(text) {
+function renderAnswerHtml(text, messageId) {
   // \s+ rather than a literal space: some models emit a narrow no-break
   // space (U+202F) inside "[Source N]" instead of a plain ASCII space.
-  return escapeHtml(text)
-    .replace(/\[Source\s+(\d+)(?::[^\]]*)?\]/g, "<cite>[$1]</cite>")
+  // Bracket class covers both ASCII [] and full-width 【】 -- the model
+  // isn't consistent about which one it uses between responses.
+  const withInline = escapeHtml(text)
+    .replace(
+      /[[【]Source\s+(\d+)(?::[^\]】]*)?[\]】]/g,
+      `<button type="button" class="citation" data-msg="${messageId}" data-n="$1">[$1]</button>`
+    )
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/`(.+?)`/g, "<code>$1</code>");
+  return renderMarkdownTables(withInline);
+}
+
+/**
+ * Convert GitHub-style markdown tables (a "| a | b |" header row, a
+ * "|---|---|" separator row, then more pipe rows) into real <table>
+ * markup. Runs on already-escaped/inline-formatted HTML, splitting on
+ * "\n" -- safe because none of the replacements above introduce a
+ * literal newline. Non-table lines pass through untouched (the bubble's
+ * white-space: pre-wrap already renders their newlines correctly).
+ */
+function renderMarkdownTables(html) {
+  const lines = html.split("\n");
+  const isRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+  const isSeparator = (l) => /^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/.test(l);
+  const splitCells = (l) => {
+    let s = l.trim();
+    if (s.startsWith("|")) s = s.slice(1);
+    if (s.endsWith("|")) s = s.slice(0, -1);
+    return s.split("|").map((c) => c.trim());
+  };
+
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isRow(lines[i]) && isSeparator(lines[i + 1] ?? "")) {
+      const header = splitCells(lines[i]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && isRow(lines[i])) {
+        rows.push(splitCells(lines[i]));
+        i++;
+      }
+      i--; // outer loop's i++ accounts for the row just past the table
+      out.push(
+        `<table class="md-table"><thead><tr>${header
+          .map((c) => `<th>${c}</th>`)
+          .join("")}</tr></thead><tbody>${rows
+          .map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`)
+          .join("")}</tbody></table>`
+      );
+    } else {
+      out.push(lines[i]);
+    }
+  }
+  return out.join("\n");
 }
 
 function relativeTime(isoString) {
@@ -215,6 +271,7 @@ function addUserMessage(text) {
 }
 
 function addAssistantPlaceholder() {
+  const messageId = ++messageIdCounter;
   const col = document.createElement("div");
   col.className = "msg-row assistant";
   col.innerHTML = `
@@ -223,11 +280,14 @@ function addAssistantPlaceholder() {
     </div>`;
   messagesEl.appendChild(col);
   scrollToBottom();
-  return col.querySelector(".bubble");
+  const bubble = col.querySelector(".bubble");
+  bubble.dataset.msgId = String(messageId);
+  return bubble;
 }
 
 function finalizeAssistantMessage(bubbleEl, { sources, cached, llm_provider, llm_model, latency_ms }) {
   const col = bubbleEl.closest(".msg-meta-col");
+  const messageId = bubbleEl.dataset.msgId;
 
   const tags = [];
   if (cached) tags.push('<span class="tag cached">cached</span>');
@@ -250,10 +310,10 @@ function finalizeAssistantMessage(bubbleEl, { sources, cached, llm_provider, llm
       <div class="source-list">
         ${sources
           .map(
-            (s) => `
-          <div class="source-item">
+            (s, i) => `
+          <div class="source-item" id="src-${messageId}-${i + 1}">
             <div class="source-item-head">
-              <span>${escapeHtml(s.filename || s.source_id || "unknown")}</span>
+              <span>[${i + 1}] ${escapeHtml(s.filename || s.source_id || "unknown")}</span>
               <span class="source-item-score">${s.score}</span>
             </div>
             <div class="source-item-content">${escapeHtml((s.content || "").slice(0, 220))}${
@@ -321,11 +381,11 @@ async function sendMessage(query) {
             started = true;
           }
           fullText += payload.content;
-          bubble.innerHTML = renderAnswerHtml(fullText);
+          bubble.innerHTML = renderAnswerHtml(fullText, bubble.dataset.msgId);
           scrollToBottom();
         } else if (payload.type === "answer") {
           fullText = payload.content;
-          bubble.innerHTML = renderAnswerHtml(fullText);
+          bubble.innerHTML = renderAnswerHtml(fullText, bubble.dataset.msgId);
         } else if (payload.type === "done") {
           finalizeAssistantMessage(bubble, payload);
         } else if (payload.type === "error") {
@@ -367,4 +427,25 @@ queryInput.addEventListener("keydown", (e) => {
 queryInput.addEventListener("input", () => {
   queryInput.style.height = "auto";
   queryInput.style.height = Math.min(queryInput.scrollHeight, 160) + "px";
+});
+
+// Delegated (not per-button) since citation buttons are created dynamically
+// on every streamed token re-render.
+messagesEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".citation");
+  if (!btn) return;
+  const target = document.getElementById(`src-${btn.dataset.msg}-${btn.dataset.n}`);
+  if (!target) return; // sources arrive with the "done" event; a click before that is a no-op
+
+  const sourcesWrap = target.closest(".sources");
+  const list = sourcesWrap?.querySelector(".source-list");
+  const toggle = sourcesWrap?.querySelector(".sources-toggle");
+  if (list && !list.classList.contains("open")) {
+    list.classList.add("open");
+    toggle?.classList.add("open");
+  }
+
+  target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  target.classList.add("flash");
+  setTimeout(() => target.classList.remove("flash"), 900);
 });

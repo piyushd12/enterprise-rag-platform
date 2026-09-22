@@ -203,6 +203,9 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
 }
 
 .empty-state {
@@ -248,14 +251,43 @@ html, body {
   padding: 0 4px;
 }
 
-.bubble cite {
-  font-style: normal;
+.md-table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 0.88em;
+  white-space: normal;
+}
+.md-table th, .md-table td {
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+  text-align: left;
+}
+.md-table th {
+  background: var(--panel);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.md-table tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
+
+.bubble .citation {
+  font: inherit;
   font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--accent-strong);
   background: rgba(45, 212, 191, 0.1);
+  border: none;
   border-radius: 4px;
   padding: 0 3px;
+  margin: 0 1px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.bubble .citation:hover, .bubble .citation:focus-visible {
+  background: rgba(45, 212, 191, 0.25);
+  color: var(--text);
+  outline: none;
 }
 
 .msg-meta-col { display: flex; flex-direction: column; gap: 8px; max-width: min(680px, 78%); }
@@ -316,6 +348,11 @@ html, body {
   background: var(--panel);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
+  transition: background 0.3s, border-color 0.3s;
+}
+.source-item.flash {
+  background: var(--accent-soft);
+  border-color: rgba(45, 212, 191, 0.4);
 }
 .source-item-head {
   display: flex;
@@ -336,6 +373,8 @@ html, body {
 }
 
 .composer-row {
+  max-width: 880px;
+  margin: 0 auto;
   display: flex;
   align-items: flex-end;
   gap: 10px;
@@ -379,6 +418,8 @@ html, body {
 .composer-send:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .composer-meta {
+  max-width: 880px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
