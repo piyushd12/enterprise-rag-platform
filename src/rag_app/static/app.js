@@ -18,9 +18,29 @@ const docsToggle = document.getElementById("docs-toggle");
 const newChatBtn = document.getElementById("new-chat-btn");
 const chatListEl = document.getElementById("chat-list");
 
-let requestInFlight = false;
 let messageIdCounter = 0;
 let currentChatId = null;
+
+// Which chat(s) currently have a request streaming, keyed by chat_id --
+// or "__new__" for a not-yet-created chat, since it has no id until the
+// server assigns one. Per-chat (not one global flag) so switching to a
+// *different* chat while one streams doesn't block sending there too;
+// switching back to a chat that's still streaming still shows it as busy.
+const inFlightChats = new Set();
+
+// The live (still in-DOM-memory, possibly detached) assistant message row
+// for each in-flight chat, keyed the same as inFlightChats. Lets openChat()
+// re-show real progress (typing dots or partial text) instead of a stale
+// view when the user switches back into a chat that's still streaming.
+const inFlightBubbles = new Map();
+
+function isCurrentChatBusy() {
+  return inFlightChats.has(currentChatId ?? "__new__");
+}
+
+function refreshComposerState() {
+  sendBtn.disabled = isCurrentChatBusy();
+}
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -308,7 +328,10 @@ function clearMessages() {
 }
 
 async function openChat(chatId) {
-  if (requestInFlight || chatId === currentChatId) return;
+  // Switching chats is always allowed, even mid-stream elsewhere -- that
+  // other stream keeps running in the background (see sendMessage) and
+  // saves correctly regardless of what's currently on screen.
+  if (chatId === currentChatId) return;
   try {
     const res = await fetch(`/chats/${chatId}`);
     if (!res.ok) return;
@@ -326,9 +349,22 @@ async function openChat(chatId) {
         });
       }
     }
+    // Stored history stops at the last completed message -- if this chat
+    // is still streaming, its assistant reply isn't persisted yet, so
+    // re-attach the live in-progress bubble instead of leaving the user's
+    // question looking unanswered.
+    const live = inFlightChats.has(chatId) ? inFlightBubbles.get(chatId) : null;
+    if (live) {
+      messagesEl.appendChild(live.row);
+      live.renderLive(true);
+    }
     highlightActiveChat(chatId);
-  } catch {
-    // Leave the current view as-is on failure.
+    refreshComposerState();
+    scrollToBottom();
+  } catch (err) {
+    // Leave the current view as-is on failure, but never swallow this
+    // silently -- a bug here previously would have been invisible.
+    console.error("openChat failed:", err);
   }
 }
 
@@ -339,10 +375,10 @@ chatListEl.addEventListener("click", (e) => {
 });
 
 newChatBtn.addEventListener("click", () => {
-  if (requestInFlight) return;
   currentChatId = null;
   clearMessages();
   highlightActiveChat(null);
+  refreshComposerState();
 });
 
 loadChats();
@@ -434,20 +470,48 @@ function renderCompleteAssistantMessage(content, meta) {
 }
 
 async function sendMessage(query) {
-  requestInFlight = true;
-  sendBtn.disabled = true;
+  // The chat this specific request belongs to, fixed at send time -- the
+  // user may switch to a different chat (or another new one) before this
+  // resolves, so `currentChatId` itself can change out from under us.
+  const targetChatId = currentChatId;
+  const inFlightKey = targetChatId ?? "__new__";
+  inFlightChats.add(inFlightKey);
+  refreshComposerState();
   composerStatus.textContent = "";
 
   addUserMessage(query);
   const bubble = addAssistantPlaceholder();
+  const row = bubble.closest(".msg-row");
   let started = false;
   let fullText = "";
+  // Whether the chat this request is for is still the one on screen --
+  // re-checked before every UI-visible update so a background response
+  // (from a chat the user has since navigated away from) never repaints
+  // or scrolls the conversation someone is currently reading.
+  const isOnScreen = () => document.body.contains(bubble);
+
+  // Redraws the bubble from the latest known text. `withCursor` shows a
+  // blinking cursor while still streaming; called both from the token
+  // loop and (via inFlightBubbles) when the user switches back into this
+  // chat mid-stream, so what they see always reflects the true progress
+  // instead of a stale "thinking" placeholder or blank message.
+  function renderLive(withCursor) {
+    if (!started) return; // still just the typing-dots placeholder
+    bubble.innerHTML =
+      renderAnswerHtml(fullText, bubble.dataset.msgId) + (withCursor ? '<span class="stream-cursor"></span>' : "");
+  }
+
+  // Lets openChat() re-show this exact in-progress message (dots or
+  // partial text) if the user navigates away and back before it finishes --
+  // otherwise a stored-history reload only has the user's question, since
+  // the assistant message isn't persisted until the stream completes.
+  inFlightBubbles.set(inFlightKey, { row, renderLive });
 
   try {
     const res = await fetch("/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, top_k: Number(topKInput.value) || 5, chat_id: currentChatId }),
+      body: JSON.stringify({ query, top_k: Number(topKInput.value) || 5, chat_id: targetChatId }),
     });
 
     if (res.status === 429) {
@@ -475,46 +539,56 @@ async function sendMessage(query) {
         const payload = JSON.parse(line.slice(5).trim());
 
         if (payload.type === "token") {
-          if (!started) {
-            bubble.innerHTML = "";
-            started = true;
-          }
           fullText += payload.content;
-          bubble.innerHTML = renderAnswerHtml(fullText, bubble.dataset.msgId);
-          scrollToBottom();
+          started = true;
+          if (isOnScreen()) {
+            renderLive(true);
+            scrollToBottom();
+          }
         } else if (payload.type === "answer") {
           fullText = payload.content;
-          bubble.innerHTML = renderAnswerHtml(fullText, bubble.dataset.msgId);
+          started = true;
+          if (isOnScreen()) renderLive(false);
         } else if (payload.type === "done") {
-          finalizeAssistantMessage(bubble, payload);
+          renderLive(false); // drop the trailing cursor before finalizing
+          if (isOnScreen()) finalizeAssistantMessage(bubble, payload);
           if (payload.chat_id) {
-            currentChatId = payload.chat_id;
-            loadChats().then(() => highlightActiveChat(currentChatId));
+            if (isOnScreen()) {
+              currentChatId = payload.chat_id;
+              loadChats().then(() => highlightActiveChat(currentChatId));
+            } else {
+              loadChats(); // still refresh titles/order in the background
+            }
           }
         } else if (payload.type === "error") {
-          bubble.classList.add("error");
-          bubble.textContent = payload.message || "Something went wrong.";
+          if (isOnScreen()) {
+            bubble.classList.add("error");
+            bubble.textContent = payload.message || "Something went wrong.";
+          }
         }
       }
     }
 
-    if (!started && !fullText) {
+    if (!started && !fullText && isOnScreen()) {
       bubble.textContent = "No response received.";
     }
   } catch (err) {
-    bubble.classList.add("error");
-    bubble.textContent = String(err.message || err);
+    if (isOnScreen()) {
+      bubble.classList.add("error");
+      bubble.textContent = String(err.message || err);
+    }
   } finally {
-    requestInFlight = false;
-    sendBtn.disabled = false;
-    scrollToBottom();
+    inFlightChats.delete(inFlightKey);
+    inFlightBubbles.delete(inFlightKey);
+    refreshComposerState();
+    if (isOnScreen()) scrollToBottom();
   }
 }
 
 composerEl.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = queryInput.value.trim();
-  if (!text || requestInFlight) return;
+  if (!text || isCurrentChatBusy()) return;
   queryInput.value = "";
   queryInput.style.height = "auto";
   sendMessage(text);

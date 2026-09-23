@@ -11,6 +11,8 @@ Node topology (Phase 2):
 
 from __future__ import annotations
 
+import asyncio
+
 from rag_app.caching.redis_cache import RedisCache
 from rag_app.core.interfaces import (
     EmbeddingProvider,
@@ -97,15 +99,20 @@ def make_retrieve_node(
         # a bad HyDE passage with the real question instead of fully
         # trusting it. Both embeddings are local (FastEmbed), so this adds
         # no extra API cost.
+        # embed_query/keyword search are CPU-bound (ONNX/BM25) and synchronous
+        # -- run in a thread so they don't block the event loop for other
+        # concurrent requests (measured ~6s freezes for the whole server
+        # otherwise, confirmed via concurrent /health probes during a live
+        # retrieval).
         hyde_document = state.get("hyde_document")
         if hyde_document:
-            query_embedding_only = embedding_provider.embed_query(query)
-            hyde_embedding = embedding_provider.embed_query(hyde_document)
+            query_embedding_only = await asyncio.to_thread(embedding_provider.embed_query, query)
+            hyde_embedding = await asyncio.to_thread(embedding_provider.embed_query, hyde_document)
             query_embedding = [
                 (a + b) / 2 for a, b in zip(query_embedding_only, hyde_embedding)
             ]
         else:
-            query_embedding = embedding_provider.embed_query(query)
+            query_embedding = await asyncio.to_thread(embedding_provider.embed_query, query)
 
         # Search vector store
         chunks = await vector_store.search(
@@ -115,7 +122,7 @@ def make_retrieve_node(
         )
 
         if keyword_search is not None:
-            bm25_chunks = keyword_search.search(query, top_k=search_k)
+            bm25_chunks = await asyncio.to_thread(keyword_search.search, query, top_k=search_k)
             chunks = _merge_dedup(chunks, bm25_chunks)
 
         return {
@@ -169,7 +176,7 @@ def make_rerank_node(reranker: Reranker):
         top_k = state.get("top_k", 5)
         candidates = state.get("retrieved_chunks", [])
 
-        reranked = reranker.rerank(query, candidates, top_n=top_k)
+        reranked = await asyncio.to_thread(reranker.rerank, query, candidates, top_n=top_k)
         return {"reranked_chunks": reranked}
 
     return rerank
