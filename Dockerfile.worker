@@ -8,10 +8,13 @@ WORKDIR /app
 
 # Copy project files
 COPY pyproject.toml uv.lock README.md ./
-COPY src ./src
 
-# Sync dependencies (frozen lockfile, no dev deps)
-RUN uv sync --frozen --no-dev
+# Deps first (cached until pyproject/uv.lock change), source after, so editing
+# src/ doesn't reinstall every package.
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
+
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 # Default command: run the Celery worker
 CMD ["uv", "run", "--no-sync", "celery", "-A", "rag_app.queue.celery_app", "worker", "--loglevel=info"]
