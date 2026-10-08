@@ -327,15 +327,24 @@ function clearMessages() {
   emptyStateEl.style.display = "";
 }
 
+let openSeq = 0;
+
+function moveChatToTop(chatId) {
+  const row = chatListEl.querySelector(`.chat-row[data-chat-id="${CSS.escape(chatId)}"]`);
+  if (row) chatListEl.prepend(row);
+}
+
 async function openChat(chatId) {
   // Switching chats is always allowed, even mid-stream elsewhere -- that
   // other stream keeps running in the background (see sendMessage) and
   // saves correctly regardless of what's currently on screen.
   if (chatId === currentChatId) return;
+  const seq = ++openSeq;
   try {
     const res = await fetch(`/chats/${chatId}`);
-    if (!res.ok) return;
+    if (!res.ok || seq !== openSeq) return;
     const data = await res.json();
+    if (seq !== openSeq) return; // a newer click/New chat superseded this load
     currentChatId = data.id;
     clearMessages();
     for (const msg of data.messages || []) {
@@ -355,6 +364,10 @@ async function openChat(chatId) {
     // question looking unanswered.
     const live = inFlightChats.has(chatId) ? inFlightBubbles.get(chatId) : null;
     if (live) {
+      const last = (data.messages || []).at(-1);
+      if (!(last && last.role === "user" && last.content === live.query)) {
+        messagesEl.appendChild(live.userRow); // server hadn't persisted it yet
+      }
       messagesEl.appendChild(live.row);
       live.renderLive(true);
     }
@@ -375,6 +388,7 @@ chatListEl.addEventListener("click", (e) => {
 });
 
 newChatBtn.addEventListener("click", () => {
+  openSeq++;
   currentChatId = null;
   clearMessages();
   highlightActiveChat(null);
@@ -395,6 +409,7 @@ function addUserMessage(text) {
   row.querySelector(".bubble").textContent = text;
   messagesEl.appendChild(row);
   scrollToBottom();
+  return row;
 }
 
 function addAssistantPlaceholder() {
@@ -474,12 +489,13 @@ async function sendMessage(query) {
   // user may switch to a different chat (or another new one) before this
   // resolves, so `currentChatId` itself can change out from under us.
   const targetChatId = currentChatId;
-  const inFlightKey = targetChatId ?? "__new__";
+  let inFlightKey = targetChatId ?? "__new__";
   inFlightChats.add(inFlightKey);
+  if (targetChatId) moveChatToTop(targetChatId);
   refreshComposerState();
   composerStatus.textContent = "";
 
-  addUserMessage(query);
+  const userRow = addUserMessage(query);
   const bubble = addAssistantPlaceholder();
   const row = bubble.closest(".msg-row");
   let started = false;
@@ -505,7 +521,7 @@ async function sendMessage(query) {
   // partial text) if the user navigates away and back before it finishes --
   // otherwise a stored-history reload only has the user's question, since
   // the assistant message isn't persisted until the stream completes.
-  inFlightBubbles.set(inFlightKey, { row, renderLive });
+  inFlightBubbles.set(inFlightKey, { row, userRow, query, renderLive });
 
   try {
     const res = await fetch("/chat/stream", {
@@ -538,7 +554,18 @@ async function sendMessage(query) {
         if (!line.startsWith("data:")) continue;
         const payload = JSON.parse(line.slice(5).trim());
 
-        if (payload.type === "token") {
+        if (payload.type === "chat") {
+          // Server assigned an id (new chat): rekey tracking and show it in the sidebar now.
+          if (inFlightKey === "__new__") {
+            inFlightChats.delete("__new__");
+            inFlightBubbles.set(payload.chat_id, inFlightBubbles.get("__new__"));
+            inFlightBubbles.delete("__new__");
+            inFlightKey = payload.chat_id;
+            inFlightChats.add(inFlightKey);
+            if (isOnScreen()) currentChatId = payload.chat_id;
+          }
+          loadChats().then(() => highlightActiveChat(currentChatId));
+        } else if (payload.type === "token") {
           fullText += payload.content;
           started = true;
           if (isOnScreen()) {

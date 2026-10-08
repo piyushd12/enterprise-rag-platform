@@ -49,3 +49,8 @@ Antigravity_agent_chat_till_now_compact.md
 hermes_till_now.md
 rag_app_ag.jsonl
 *.code-workspace
+
+.claude
+.agents
+graphify-out
+RAGAS_DOCS_TO_INGEST

@@ -226,6 +226,7 @@ async def chat_stream(
             await chat_store.append_message(
                 chat_id, {"role": "user", "content": body.query, "ts": time.time()}
             )
+            yield _sse("chat", {"chat_id": chat_id})
 
             cached = await cache.get_answer(body.query) if cache else None
             if cached is not None:
