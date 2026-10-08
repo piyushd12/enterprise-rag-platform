@@ -119,6 +119,32 @@ html, body {
   color: var(--text);
 }
 
+.chat-item { position: relative; }
+.chat-item .chat-row { padding-right: 30px; }
+.chat-del {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.chat-del svg { width: 14px; height: 14px; }
+.chat-item:hover .chat-del,
+.chat-item:focus-within .chat-del { opacity: 1; }
+.chat-del:hover,
+.chat-del:focus-visible { color: #f87171; background: rgba(248, 113, 113, 0.12); }
+
 /* ---------- Documents disclosure ---------- */
 
 .docs-toggle {

@@ -69,7 +69,17 @@ class RedisChatStore(ChatStore):
         }
 
     async def append_message(self, chat_id: str, message: dict[str, Any]) -> None:
+        # A chat deleted while its answer was still streaming must stay
+        # deleted -- writing updated_at + zadd here would resurrect it as an
+        # untitled sidebar entry.
+        if not self._redis.exists(f"chat:meta:{chat_id}"):
+            return
         self._redis.rpush(f"chat:messages:{chat_id}", json.dumps(message))
         now = time.time()
         self._redis.hset(f"chat:meta:{chat_id}", "updated_at", now)
         self._redis.zadd(self.INDEX_KEY, {chat_id: now})
+
+    async def delete_chat(self, chat_id: str) -> bool:
+        deleted = self._redis.delete(f"chat:meta:{chat_id}", f"chat:messages:{chat_id}")
+        self._redis.zrem(self.INDEX_KEY, chat_id)
+        return deleted > 0

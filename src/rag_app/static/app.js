@@ -309,8 +309,15 @@ function renderChats(chats) {
   chatListEl.innerHTML = chats
     .map(
       (c) => `
-      <button type="button" class="chat-row${c.id === currentChatId ? " active" : ""}"
-        data-chat-id="${escapeAttr(c.id)}" title="${escapeAttr(c.title)}">${escapeHtml(c.title)}</button>`
+      <div class="chat-item">
+        <button type="button" class="chat-row${c.id === currentChatId ? " active" : ""}"
+          data-chat-id="${escapeAttr(c.id)}" title="${escapeAttr(c.title)}">${escapeHtml(c.title)}</button>
+        <button type="button" class="chat-del" aria-label="Delete chat" title="Delete chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/>
+          </svg>
+        </button>
+      </div>`
     )
     .join("");
 }
@@ -331,7 +338,7 @@ let openSeq = 0;
 
 function moveChatToTop(chatId) {
   const row = chatListEl.querySelector(`.chat-row[data-chat-id="${CSS.escape(chatId)}"]`);
-  if (row) chatListEl.prepend(row);
+  if (row) chatListEl.prepend(row.closest(".chat-item"));
 }
 
 async function openChat(chatId) {
@@ -382,18 +389,41 @@ async function openChat(chatId) {
 }
 
 chatListEl.addEventListener("click", (e) => {
+  const del = e.target.closest(".chat-del");
+  if (del) {
+    deleteChat(del.closest(".chat-item").querySelector(".chat-row").dataset.chatId);
+    return;
+  }
   const row = e.target.closest(".chat-row");
   if (!row) return;
   openChat(row.dataset.chatId);
 });
 
-newChatBtn.addEventListener("click", () => {
+function startNewChat() {
   openSeq++;
   currentChatId = null;
   clearMessages();
   highlightActiveChat(null);
   refreshComposerState();
-});
+}
+
+newChatBtn.addEventListener("click", startNewChat);
+
+async function deleteChat(chatId) {
+  if (!confirm("Delete this chat?")) return;
+  try {
+    const res = await fetch(`/chats/${encodeURIComponent(chatId)}`, { method: "DELETE" });
+    if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
+  } catch (err) {
+    console.error("deleteChat failed:", err);
+    return;
+  }
+  // A stream still running for this chat finishes harmlessly: its bubble is
+  // off-screen once cleared, and the server drops its final save.
+  if (chatId === currentChatId) startNewChat();
+  chatListEl.querySelector(`.chat-row[data-chat-id="${CSS.escape(chatId)}"]`)?.closest(".chat-item").remove();
+  if (!chatListEl.querySelector(".chat-item")) renderChats([]);
+}
 
 loadChats();
 

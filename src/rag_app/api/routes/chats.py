@@ -1,6 +1,6 @@
 """
-Chat session endpoints — list saved chats and load one's full history,
-powering the sidebar in the UI. Chats are created implicitly by
+Chat session endpoints — list saved chats, load one's full history, and
+delete one, powering the sidebar in the UI. Chats are created implicitly by
 POST /chat/stream (see routes/chat.py) rather than through this router.
 """
 
@@ -29,3 +29,10 @@ async def get_chat(chat_id: str, chat_store: ChatStore = Depends(get_chat_store)
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")
     return ChatDetailResponse(**chat)
+
+
+@router.delete("/chats/{chat_id}", status_code=204)
+async def delete_chat(chat_id: str, chat_store: ChatStore = Depends(get_chat_store)) -> None:
+    """Delete a chat and its full message history."""
+    if not await chat_store.delete_chat(chat_id):
+        raise HTTPException(status_code=404, detail="Chat not found")

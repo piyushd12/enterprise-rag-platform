@@ -170,7 +170,13 @@ class ChatStore(ABC):
 
     @abstractmethod
     async def append_message(self, chat_id: str, message: dict[str, Any]) -> None:
-        """Append one message ({role, content, ...}) to a chat's history."""
+        """Append one message ({role, content, ...}) to a chat's history.
+        No-op if the chat doesn't exist (e.g. deleted mid-stream)."""
+        ...
+
+    @abstractmethod
+    async def delete_chat(self, chat_id: str) -> bool:
+        """Delete a chat and its history. Returns True if it existed."""
         ...
 
 
