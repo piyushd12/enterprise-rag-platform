@@ -123,6 +123,13 @@ def make_retrieve_node(
 
         if keyword_search is not None:
             bm25_chunks = await asyncio.to_thread(keyword_search.search, query, top_k=search_k)
+            # BM25 scores the whole corpus, so apply the same payload filters
+            # dense search got -- otherwise a question scoped to one document
+            # would still pull keyword matches from every other document.
+            if filters:
+                bm25_chunks = [
+                    c for c in bm25_chunks if all(c.metadata.get(k) == v for k, v in filters.items())
+                ]
             chunks = _merge_dedup(chunks, bm25_chunks)
 
         return {

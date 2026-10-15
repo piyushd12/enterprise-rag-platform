@@ -102,6 +102,16 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
         embedder = _get_worker_embedder()
         store = _get_worker_store(obs)
 
+        def report_progress(done: int, total: int) -> None:
+            self.update_state(
+                state="STARTED",
+                meta={
+                    "message": f"Embedding {filename}",
+                    "chunks_processed": done,
+                    "total_chunks": total,
+                },
+            )
+
         # Run ingestion in a dedicated event loop (reused for the whole task)
         start = time.perf_counter()
         loop = asyncio.new_event_loop()
@@ -116,6 +126,7 @@ def ingest_document(self, file_path: str, source_id: str, metadata: dict):
                     obs=obs,
                     filename=filename,
                     source_id=source_id,
+                    on_progress=report_progress,
                 )
             )
         finally:

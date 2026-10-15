@@ -2,105 +2,138 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>RAG Chat</title>
+<meta name="description" content="Chat with your documents: answers cite the passages they come from.">
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <div class="brand">
-          <span class="brand-dot" id="health-dot" title="Checking..."></span>
-          <span class="brand-name">RAG&nbsp;Chat</span>
-        </div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-panel-left" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-4.5 3.5V17H6a2 2 0 0 1-2-2z"/><rect x="7" y="7.6" width="10" height="3.4" rx="1" style="fill:var(--doc-1);stroke:none"/><path d="M8 13.4h5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+    <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chev-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app" data-layout="wide">
+  <a class="skip" href="#composer-input">Skip to question box</a>
+
+  <nav class="sidebar" id="sidebar" aria-label="Chats">
+    <div class="sb-head">
+      <div class="brand"><span class="brand-mark"><svg class="ic" aria-hidden="true"><use href="#i-mark"/></svg></span><span class="brand-text"><span>RAG Chat</span><span class="brand-sub">Chat with your documents</span></span></div>
+      <button type="button" class="icon-btn" id="sb-collapse" aria-label="Hide sidebar"><svg class="ic" aria-hidden="true"><use href="#i-panel-left"/></svg></button>
+    </div>
+    <div class="sb-actions">
+      <button type="button" class="new-chat" id="new-chat"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>New chat<kbd>Ctrl ⇧ O</kbd></button>
+      <div class="search">
+        <label for="chat-search" class="sr-only">Search chats</label>
+        <svg class="ic ic-sm" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="chat-search" type="search" placeholder="Search chats" autocomplete="off">
       </div>
-
-      <button type="button" class="new-chat-btn" id="new-chat-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 5v14M5 12h14" stroke-linecap="round"/>
-        </svg>
-        New chat
-      </button>
-
-      <div class="sidebar-section sidebar-section-grow">
-        <div class="sidebar-label">Chats</div>
-        <div class="chat-list" id="chat-list">
-          <div class="empty-hint">No chats yet.</div>
-        </div>
+    </div>
+    <div class="chat-scroll" id="chat-groups"></div>
+    <div class="sb-foot">
+      <div class="foot-row">
+        <button type="button" class="status-btn" id="status-btn" aria-haspopup="dialog" aria-expanded="false"><span class="dot unknown" id="status-dot"></span><span id="status-text">Checking status…</span></button>
+        <button type="button" class="icon-btn" id="theme-btn" aria-label="Theme: system. Switch to light"><svg class="ic" aria-hidden="true"><use href="#i-monitor" id="theme-icon"/></svg></button>
       </div>
-
-      <div class="sidebar-section">
-        <label class="dropzone" id="dropzone" for="file-input">
-          <input type="file" id="file-input" accept=".pdf,.txt,.md" hidden>
-          <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span>Drop a file or <span class="dropzone-link">browse</span></span>
-          <span class="dropzone-hint">PDF, TXT, or MD &middot; 20MB max</span>
-        </label>
-        <div class="upload-list" id="upload-list"></div>
+      <div class="links">
+        <a href="https://smith.langchain.com" target="_blank" rel="noopener">LangSmith<svg class="ic" style="width:12px;height:12px" aria-hidden="true"><use href="#i-ext"/></svg></a>
+        <a href="https://logfire.pydantic.dev" target="_blank" rel="noopener">Logfire<svg class="ic" style="width:12px;height:12px" aria-hidden="true"><use href="#i-ext"/></svg></a>
+        <a href="/docs" target="_blank" rel="noopener">API docs<svg class="ic" style="width:12px;height:12px" aria-hidden="true"><use href="#i-ext"/></svg></a>
       </div>
+    </div>
+  </nav>
 
-      <div class="sidebar-section">
-        <button type="button" class="docs-toggle" id="docs-toggle">
-          <span class="chevron">&#9656;</span> Documents
-          <span class="doc-count" id="doc-count"></span>
-        </button>
-        <div class="doc-list" id="doc-list" hidden>
-          <div class="empty-hint">No documents ingested yet.</div>
-        </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <a href="https://smith.langchain.com" target="_blank" rel="noopener" class="footer-link">
-          LangSmith <span class="ext-arrow">&#8599;</span>
-        </a>
-        <a href="https://logfire.pydantic.dev" target="_blank" rel="noopener" class="footer-link">
-          Logfire <span class="ext-arrow">&#8599;</span>
-        </a>
-        <a href="/docs" target="_blank" rel="noopener" class="footer-link">
-          API Docs <span class="ext-arrow">&#8599;</span>
-        </a>
-      </div>
-    </aside>
-
-    <main class="chat">
-      <div class="messages" id="messages">
-        <div class="empty-state" id="empty-state">
-          <div class="empty-state-title">Ask something about your documents</div>
-          <div class="empty-state-hint">Retrieval uses dense search + BM25 keyword search, re-ranked by a cross-encoder before the model answers.</div>
-        </div>
-      </div>
-
-      <form class="composer" id="composer">
-        <div class="composer-row">
-          <textarea
-            id="query-input"
-            class="composer-input"
-            placeholder="Ask a question..."
-            rows="1"
-            maxlength="2000"
-          ></textarea>
-          <button type="submit" class="composer-send" id="send-btn" aria-label="Send">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+  <main class="main" id="main">
+    <div class="topbar">
+      <button type="button" class="icon-btn top-left" id="open-nav" aria-label="Show chats" aria-expanded="false"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <div class="title-wrap"><h1 id="chat-title">New chat</h1><div class="title-sub" id="title-sub"></div></div>
+      <button type="button" class="icon-btn top-new" id="top-new" aria-label="New chat"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <button type="button" class="btn btn-docs" id="docs-btn" aria-expanded="false" aria-controls="panel"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-library"/></svg><span class="label">Documents</span><span class="count" id="docs-count"></span></button>
+    </div>
+    <div class="banner" id="banner" hidden>
+      <svg class="ic" aria-hidden="true"><use href="#i-alert"/></svg>
+      <p id="banner-text"></p>
+      <button type="button" class="btn" id="banner-retry">Check now</button>
+    </div>
+    <div class="scroller" id="scroller">
+      <div class="thread" id="thread" aria-live="off"></div>
+    </div>
+    <form class="composer" id="composer" autocomplete="off">
+      <div class="composer-inner">
+        <button type="button" class="jump" id="jump" hidden><svg class="ic ic-sm" aria-hidden="true"><use href="#i-down"/></svg>Jump to latest</button>
+        <div class="box">
+          <button type="button" class="icon-btn" id="attach" aria-label="Add documents"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg></button>
+          <label for="composer-input" class="sr-only">Ask a question about your documents</label>
+          <textarea id="composer-input" rows="1" maxlength="2000" placeholder="Ask about your documents…"></textarea>
+          <button type="submit" class="send" id="send" aria-label="Send question" disabled><svg class="ic" aria-hidden="true"><use href="#i-up" id="send-icon"/></svg></button>
         </div>
         <div class="composer-meta">
-          <label class="top-k-control">
-            top_k
-            <input type="number" id="top-k-input" value="5" min="1" max="20">
-          </label>
-          <span class="composer-hint" id="composer-status"></span>
+          <span class="chip-group" id="scope-group">
+            <button type="button" class="chip" id="scope-chip" aria-haspopup="menu" aria-expanded="false"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-layers" id="scope-icon"/></svg><span class="doc-sw" aria-hidden="true"></span><span class="txt" id="scope-text">All documents</span><svg class="ic ic-sm" aria-hidden="true"><use href="#i-chev-down"/></svg></button>
+          </span>
+          <button type="button" class="chip" id="topk-chip" aria-haspopup="dialog" aria-expanded="false"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-sliders"/></svg><span id="topk-text">5 passages</span></button>
+          <span class="counter" id="counter" hidden></span>
+          <span class="hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</span>
         </div>
-      </form>
-    </main>
+      </div>
+      <input type="file" id="file-input" accept=".pdf,.txt,.md" multiple hidden>
+    </form>
+  </main>
+
+  <aside class="panel" id="panel" aria-label="Sources and documents">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="panel-head">
+      <div class="tabs" role="tablist" aria-label="Side panel">
+        <button type="button" class="tab" role="tab" id="tab-src" aria-controls="pane-src" aria-selected="true">Sources</button>
+        <button type="button" class="tab" role="tab" id="tab-docs" aria-controls="pane-docs" aria-selected="false" tabindex="-1">Documents <span class="count" id="tab-docs-count"></span></button>
+      </div>
+      <button type="button" class="icon-btn" id="panel-close" aria-label="Close panel"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="panel-body" id="pane-src" role="tabpanel" aria-labelledby="tab-src"></div>
+    <div class="panel-body" id="pane-docs" role="tabpanel" aria-labelledby="tab-docs" hidden></div>
+  </aside>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="toasts" id="toasts"></div>
+  <div class="drop" id="drop" hidden>
+    <div class="drop-card"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg><strong>Drop to add to your documents</strong><span>PDF, TXT or MD · up to 20 MB each</span></div>
+  </div>
+  <div class="sr-only" aria-live="polite" id="live"></div>
   </div>
 
-  <script src="/app.js"></script>
+<script src="/markdown.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

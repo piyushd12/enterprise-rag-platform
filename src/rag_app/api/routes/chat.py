@@ -228,7 +228,11 @@ async def chat_stream(
             )
             yield _sse("chat", {"chat_id": chat_id})
 
-            cached = await cache.get_answer(body.query) if cache else None
+            # The answer cache is keyed on the query text alone, so a question
+            # scoped to one document (filters) must neither read an unscoped
+            # cached answer nor overwrite one with its narrower answer.
+            answer_cache = cache if not body.filters else None
+            cached = await answer_cache.get_answer(body.query) if answer_cache else None
             if cached is not None:
                 await chat_store.append_message(
                     chat_id,
@@ -260,24 +264,21 @@ async def chat_stream(
                 use_reranker=reranker is not None,
                 keyword_search=keyword_search,
             )
+            # "status" and "sources" events let the UI show retrieval progress
+            # and make citations clickable before generation finishes.
+            yield _sse("status", {"stage": "retrieving"})
             state: dict = {"query": body.query, "top_k": body.top_k, "filters": body.filters}
             state.update(await retrieve(state))
             if reranker is not None:
+                yield _sse(
+                    "status",
+                    {"stage": "reranking", "candidates": len(state.get("retrieved_chunks", []))},
+                )
                 state.update(await make_rerank_node(reranker)(state))
 
             chunks = state.get("reranked_chunks") or state.get("retrieved_chunks", [])
             history = _format_history(history_messages)
             prompt = _build_rag_prompt(body.query, build_context(chunks), history)
-
-            meta: dict = {}
-            full_answer = ""
-            try:
-                async for token in llm_provider.stream(prompt, meta):
-                    full_answer += token
-                    yield _sse("token", {"content": token})
-            except Exception as exc:
-                yield _sse("error", {"message": str(exc)[:500]})
-                return
 
             sources = [
                 {
@@ -289,8 +290,21 @@ async def chat_stream(
                 }
                 for c in chunks
             ]
-            if cache:
-                await cache.set_answer(body.query, full_answer, sources)
+            yield _sse("sources", {"sources": sources})
+            yield _sse("status", {"stage": "generating"})
+
+            meta: dict = {}
+            full_answer = ""
+            try:
+                async for token in llm_provider.stream(prompt, meta):
+                    full_answer += token
+                    yield _sse("token", {"content": token})
+            except Exception as exc:
+                yield _sse("error", {"message": str(exc)[:500]})
+                return
+
+            if answer_cache:
+                await answer_cache.set_answer(body.query, full_answer, sources)
 
             await chat_store.append_message(
                 chat_id,

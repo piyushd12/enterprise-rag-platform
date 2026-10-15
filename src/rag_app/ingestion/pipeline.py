@@ -8,6 +8,7 @@ instrumentation on each major step.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,6 +16,10 @@ from rag_app.core.interfaces import EmbeddingProvider, VectorStore
 from rag_app.ingestion.chunker import chunk_text
 from rag_app.ingestion.loader import load_document
 from rag_app.observability.provider import ObservabilityProvider
+
+# Chunks embedded per call -- small enough that progress updates arrive
+# every second or two on a large PDF, large enough to keep batching efficient.
+EMBED_BATCH_SIZE = 64
 
 
 async def ingest_file(
@@ -26,6 +31,7 @@ async def ingest_file(
     chunk_overlap: int | None = None,
     filename: str | None = None,
     source_id: str | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> dict:
     """Run the full ingestion pipeline for a single file.
 
@@ -40,6 +46,9 @@ async def ingest_file(
             temp file with a different name (see `load_document`).
         source_id: Caller-supplied stable identifier (e.g. content hash), if
             `file_path` isn't a stable on-disk location (see `load_document`).
+        on_progress: Called as `on_progress(chunks_embedded, total_chunks)`
+            after chunking and after each embedding batch, so a caller can
+            report live progress (the Celery task forwards it to the UI).
 
     Returns:
         Summary dict with source_id, chunk_count, filename.
@@ -66,7 +75,16 @@ async def ingest_file(
             "ingestion.embed",
             {"source_id": source_id, "chunk_count": len(chunks)},
         ) as embed_span:
-            embeddings = embedding_provider.embed_documents(chunks)
+            total = len(chunks)
+            embeddings: list[list[float]] = []
+            if on_progress:
+                on_progress(0, total)
+            for start in range(0, total, EMBED_BATCH_SIZE):
+                embeddings.extend(
+                    embedding_provider.embed_documents(chunks[start : start + EMBED_BATCH_SIZE])
+                )
+                if on_progress:
+                    on_progress(len(embeddings), total)
             embed_span["embedding_dimension"] = (
                 len(embeddings[0]) if embeddings else 0
             )
