@@ -18,17 +18,20 @@ from langgraph.graph import END, StateGraph
 from rag_app.caching.redis_cache import RedisCache
 from rag_app.core.interfaces import (
     EmbeddingProvider,
+    Guardrails,
     KeywordSearchProvider,
     LLMProvider,
     Reranker,
     VectorStore,
 )
 from rag_app.rag.nodes import (
+    _end_if_blocked,
     _redirect_after_cache_lookup,
     make_cache_lookup_node,
     make_cache_write_node,
     make_generate_node,
     make_hyde_expand_node,
+    make_input_guard_node,
     make_rerank_node,
     make_retrieve_node,
 )
@@ -43,6 +46,7 @@ def build_rag_graph(
     use_hyde: bool = False,
     reranker: Reranker | None = None,
     keyword_search: KeywordSearchProvider | None = None,
+    guardrails: Guardrails | None = None,
 ) -> StateGraph:
     """Build and compile the RAG state graph.
 
@@ -85,6 +89,12 @@ def build_rag_graph(
           distinctive exact terms (proper nouns, specific phrases) that
           dense embeddings can under-weight.
 
+    Guardrails behavior (off when guardrails is None, e.g. eval baselines):
+        - input_guard becomes the entry point, ahead of cache_lookup, and
+          ends the graph on a block (refusal in generated_answer).
+        - cache_write only stores answers every guard check passed (see
+          nodes.cacheable), so a cache hit never needs re-checking.
+
     LangSmith tracing: The compiled graph is invoked with
     config={"metadata": {"request_id": ...}} to auto-trace every
     node as a child run with the request_id for correlation.
@@ -122,6 +132,16 @@ def build_rag_graph(
     else:
         post_retrieve = "retrieve"
 
+    after_input = "cache_lookup" if cache is not None else pre_retrieve
+    if guardrails is not None:
+        graph.add_node("input_guard", make_input_guard_node(guardrails))
+        graph.set_entry_point("input_guard")
+        graph.add_conditional_edges(
+            "input_guard", _end_if_blocked(after_input), {"end": END, after_input: after_input}
+        )
+    else:
+        graph.set_entry_point(after_input)
+
     # Add cache nodes when cache is provided
     if cache is not None:
         cache_lookup = make_cache_lookup_node(cache)
@@ -131,7 +151,6 @@ def build_rag_graph(
         graph.add_node("cache_write", cache_write)
 
         # Edges: cache_lookup branches, cache_write runs after generate
-        graph.set_entry_point("cache_lookup")
         graph.add_conditional_edges(
             "cache_lookup",
             _redirect_after_cache_lookup,
@@ -145,7 +164,6 @@ def build_rag_graph(
         graph.add_edge("cache_write", END)
     else:
         # Fallback: Phase 1 linear flow (no caching)
-        graph.set_entry_point(pre_retrieve)
         graph.add_edge(post_retrieve, "generate")
         graph.add_edge("generate", END)
 

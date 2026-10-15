@@ -48,8 +48,23 @@ class SourceChunk(BaseModel):
     filename: str = ""
 
 
+class GuardrailInfo(BaseModel):
+    """One guardrail check's outcome, as reported to the client."""
+
+    action: Literal["pass", "flag", "block"]
+    check: str  # e.g. "input.injection", "context.relevance"
+    reason: str = ""
+    score: float | None = None
+
+
 class ChatResponse(BaseModel):
-    """Response body for POST /chat."""
+    """Response body for POST /chat.
+
+    A request refused by a guardrail is still a 200: `answer` holds the
+    refusal and `guardrail` says which check fired and why. Checks that
+    flagged without blocking (PII masked, a missing citation) are listed
+    in `guardrail_flags`.
+    """
 
     request_id: str
     answer: str
@@ -58,6 +73,8 @@ class ChatResponse(BaseModel):
     llm_provider: str
     llm_model: str
     latency_ms: float
+    guardrail: GuardrailInfo | None = None
+    guardrail_flags: list[GuardrailInfo] = []
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +186,8 @@ class StoredChatMessage(BaseModel):
     llm_provider: str | None = None
     llm_model: str | None = None
     ts: float | None = None
+    guardrail: GuardrailInfo | None = None
+    guardrail_flags: list[GuardrailInfo] | None = None
 
 
 class ChatDetailResponse(BaseModel):

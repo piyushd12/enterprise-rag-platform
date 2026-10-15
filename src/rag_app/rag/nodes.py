@@ -17,11 +17,14 @@ import re
 from rag_app.caching.redis_cache import RedisCache
 from rag_app.core.interfaces import (
     EmbeddingProvider,
+    Guardrails,
+    GuardResult,
     KeywordSearchProvider,
     LLMProvider,
     Reranker,
     RetrievedChunk,
     VectorStore,
+    first_block,
 )
 from rag_app.rag.state import RAGState
 
@@ -56,6 +59,55 @@ be answered from <conversation_history>.
 
 # Our own delimiter tags, as they might appear inside untrusted text.
 _DELIMITER_RE = re.compile(r"<(/?)\s*(documents?|conversation_history)\b", re.IGNORECASE)
+
+
+def make_input_guard_node(guardrails: Guardrails):
+    """Factory for the input-guard node -- the graph's entry point when
+    guardrails are on, ahead of cache_lookup, so a blocked query never
+    reads the cache, never reaches HyDE's LLM call, and never retrieves.
+
+    Replaces `query` with the guard's version (secrets masked) and
+    `history` with the turns that may be fed to generation. On a block the
+    refusal becomes `generated_answer`, so callers (the /chat route, the
+    eval harness) read the answer from the same field either way.
+    """
+
+    async def input_guard(state: RAGState) -> dict:
+        query, history, results = await guardrails.check_input(
+            state["query"], state.get("history", []), state.get("request_id", "")
+        )
+        update: dict = {"query": query, "history": history, "guard_results": results}
+        blocked = first_block(results)
+        if blocked:
+            update["generated_answer"] = blocked.message
+        return update
+
+    return input_guard
+
+
+def _end_if_blocked(next_node: str):
+    """Conditional edge after a guard node: END on a block, else next_node."""
+
+    def route(state: RAGState) -> str:
+        return "end" if first_block(state.get("guard_results", [])) else next_node
+
+    return route
+
+
+def cacheable(results: list[GuardResult], filters: dict | None, has_history: bool) -> bool:
+    """Whether an answer may be written to the shared answer cache. The one
+    rule both chat paths use.
+
+    Only answers where every guard check passed are cached, so a cache hit
+    is safe to serve without re-checking: no refusals, no masked answers,
+    no answers built from flagged chunks or a flagged query. The cache is
+    keyed on the query alone, so anything else that shaped the answer
+    excludes it too: document-scoped filters, and chat history -- caching
+    a history-shaped answer would hand one user's conversation (including
+    an injection planted in an earlier turn) to everyone asking the same
+    question.
+    """
+    return not filters and not has_history and all(r.action == "pass" for r in results)
 
 
 def make_hyde_expand_node(llm_provider: LLMProvider):
@@ -277,6 +329,10 @@ def make_cache_lookup_node(cache: RedisCache):
     On cache miss: sets cache_hit=False so downstream nodes run normally.
     """
     async def cache_lookup(state: RAGState) -> dict:
+        # A document-scoped question must not be answered with an unscoped
+        # cached answer (and cacheable() never writes scoped ones).
+        if state.get("filters"):
+            return {"cache_hit": False}
         query = state["query"]
         result = await cache.get_answer(query)
 
@@ -298,6 +354,10 @@ def make_cache_write_node(cache: RedisCache):
     cache with the configured TTL. Called only on cache-miss paths.
     """
     async def cache_write(state: RAGState) -> dict:
+        if not cacheable(
+            state.get("guard_results", []), state.get("filters"), bool(state.get("history"))
+        ):
+            return {}
         query = state["query"]
         answer = state.get("generated_answer", "")
         chunks = state.get("reranked_chunks") or state.get("retrieved_chunks", [])

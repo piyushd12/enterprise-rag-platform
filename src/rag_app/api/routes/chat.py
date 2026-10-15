@@ -15,6 +15,7 @@ from rag_app.api.dependencies import (
     get_cache,
     get_chat_store,
     get_embedding_provider,
+    get_guardrails,
     get_keyword_search,
     get_llm_provider,
     get_obs,
@@ -26,20 +27,43 @@ from rag_app.api.schemas import ChatRequest, ChatResponse, SourceChunk
 from rag_app.core.interfaces import (
     ChatStore,
     EmbeddingProvider,
+    Guardrails,
+    GuardResult,
     KeywordSearchProvider,
     LLMProvider,
     Reranker,
     VectorStore,
+    first_block,
 )
 from rag_app.observability.provider import ObservabilityProvider
 from rag_app.rag.graph import build_rag_graph
-from rag_app.rag.nodes import _build_rag_prompt, build_context, make_rerank_node, make_retrieve_node
+from rag_app.rag.nodes import (
+    _build_rag_prompt,
+    build_context,
+    cacheable,
+    make_rerank_node,
+    make_retrieve_node,
+)
 
 router = APIRouter(tags=["chat"])
 
 
+# Sidebar title for a chat whose first message was refused (see chat_stream).
+DECLINED_TITLE = "Declined request"
+
+
 def _sse(event_type: str, data: dict) -> str:
     return f"data: {json.dumps({'type': event_type, **data})}\n\n"
+
+
+def _guard_info(result: GuardResult) -> dict:
+    """A guard result as sent to the client and stored with a message --
+    without the refusal text, which is the message content itself."""
+    return {"action": result.action, "check": result.check, "reason": result.reason, "score": result.score}
+
+
+def _guard_flags(results: list[GuardResult]) -> list[dict]:
+    return [_guard_info(r) for r in results if r.action == "flag"]
 
 
 _TITLE_SYSTEM_PROMPT = (
@@ -87,6 +111,7 @@ async def chat(
     cache=Depends(get_cache),
     reranker: Reranker = Depends(get_reranker),
     keyword_search: KeywordSearchProvider = Depends(get_keyword_search),
+    guards: Guardrails = Depends(get_guardrails),
 ) -> ChatResponse:
     """Ask a question against the ingested documents.
 
@@ -111,6 +136,7 @@ async def chat(
             cache=cache,
             reranker=reranker,
             keyword_search=keyword_search,
+            guardrails=guards,
         )
 
         # LangSmith tracing config — request_id in metadata for correlation
@@ -134,9 +160,16 @@ async def chat(
         total_latency = round((time.perf_counter() - start) * 1000, 2)
 
         cache_hit = result.get("cache_hit", False)
+        guard_results = result.get("guard_results", [])
+        blocked = first_block(guard_results)
 
+        # A blocked request's refusal is in generated_answer (the guard node
+        # puts it there); no sources, since none were used to answer.
+        if blocked:
+            answer = result.get("generated_answer", blocked.message)
+            sources = []
         # On cache hit, answer comes from cached_answer; sources from cached data
-        if cache_hit:
+        elif cache_hit:
             answer = result.get("cached_answer", "")
             # Rebuild SourceChunk objects from cached source metadata
             cached_sources = result.get("cached_sources", [])
@@ -169,9 +202,11 @@ async def chat(
         answer=answer,
         sources=sources,
         cached=cache_hit,
-        llm_provider=result.get("llm_provider_used", "cache") if not cache_hit else "cache",
+        llm_provider=result.get("llm_provider_used", "") if not cache_hit else "cache",
         llm_model=result.get("llm_model_used", "") if not cache_hit else "",
         latency_ms=total_latency,
+        guardrail=_guard_info(blocked) if blocked else None,
+        guardrail_flags=_guard_flags(guard_results),
     )
 
 
@@ -188,6 +223,7 @@ async def chat_stream(
     reranker: Reranker = Depends(get_reranker),
     keyword_search: KeywordSearchProvider = Depends(get_keyword_search),
     chat_store: ChatStore = Depends(get_chat_store),
+    guards: Guardrails = Depends(get_guardrails),
 ) -> StreamingResponse:
     """Same pipeline as /chat, streamed as Server-Sent Events, within a
     persisted chat session.
@@ -209,7 +245,8 @@ async def chat_stream(
     Chat sessions: if `body.chat_id` is omitted (or unknown), a new chat
     is created with a title generated from this first question (one extra
     short LLM call, made synchronously before generation starts -- so new
-    chats pay a small latency cost existing chats don't). Every message is
+    chats pay a small latency cost existing chats don't; a first message the
+    input guard refuses gets a fixed title instead). Every message is
     persisted to the chat's history, and recent turns from that history
     are fed back into the generation prompt so follow-up questions can be
     resolved against what was already discussed. Retrieval itself is not
@@ -222,22 +259,76 @@ async def chat_stream(
         with obs.span("chat.stream.request", {"request_id": request_id, "query": body.query}):
             existing_chat = await chat_store.get_chat(body.chat_id) if body.chat_id else None
             history_messages = existing_chat["messages"] if existing_chat else []
+
+            # Input guards run before anything else touches the query: the
+            # title LLM call, the cache, retrieval. `query` has secrets
+            # masked; `history` has refused or injected turns removed.
+            query, history, guard_results = await guards.check_input(
+                body.query, history_messages, request_id
+            )
+            blocked = first_block(guard_results)
+
             if existing_chat:
                 chat_id = body.chat_id
             else:
-                title = await _generate_chat_title(llm_provider, body.query)
+                # A refused first message gets a fixed title -- generating one
+                # would send the refused text to the LLM anyway and store
+                # whatever came back in every client's sidebar.
+                title = DECLINED_TITLE if blocked else await _generate_chat_title(llm_provider, query)
                 chat_id = await chat_store.create_chat(title)
 
-            await chat_store.append_message(
-                chat_id, {"role": "user", "content": body.query, "ts": time.time()}
-            )
+            user_message = {"role": "user", "content": body.query, "ts": time.time()}
+            if blocked:
+                # Tagged so later turns never feed it back into a prompt.
+                user_message["guardrail"] = _guard_info(blocked)
+            await chat_store.append_message(chat_id, user_message)
             yield _sse("chat", {"chat_id": chat_id})
 
-            # The answer cache is keyed on the query text alone, so a question
-            # scoped to one document (filters) must neither read an unscoped
-            # cached answer nor overwrite one with its narrower answer.
-            answer_cache = cache if not body.filters else None
-            cached = await answer_cache.get_answer(body.query) if answer_cache else None
+            def done(sources: list, cached: bool, meta: dict, block: GuardResult | None = None) -> str:
+                return _sse(
+                    "done",
+                    {
+                        "request_id": request_id,
+                        "chat_id": chat_id,
+                        "sources": sources,
+                        "cached": cached,
+                        "llm_provider": "cache" if cached else meta.get("provider", ""),
+                        "llm_model": meta.get("model", ""),
+                        "latency_ms": round((time.perf_counter() - start) * 1000, 2),
+                        "guardrail": _guard_info(block) if block else None,
+                        "guardrail_flags": _guard_flags(guard_results),
+                    },
+                )
+
+            async def refuse(block: GuardResult):
+                """Persist and send a refusal in place of an answer. The
+                "answer" event carries the text for clients that only render
+                answers; "guardrail" says which check fired and why."""
+                await chat_store.append_message(
+                    chat_id,
+                    {
+                        "role": "assistant",
+                        "content": block.message,
+                        "sources": [],
+                        "guardrail": _guard_info(block),
+                        "ts": time.time(),
+                    },
+                )
+                yield _sse("answer", {"content": block.message})
+                yield _sse("guardrail", {**_guard_info(block), "content": block.message})
+                yield done([], False, {}, block)
+
+            if blocked:
+                async for frame in refuse(blocked):
+                    yield frame
+                return
+
+            # The answer cache is keyed on the query text alone, so it's only
+            # read when nothing else would shape the answer: no document
+            # scope (filters) and no chat history. Writes follow the same
+            # rule plus "every guard check passed" (see nodes.cacheable).
+            answer_cache = cache if not body.filters and not history_messages else None
+            cached = await answer_cache.get_answer(query) if answer_cache else None
             if cached is not None:
                 await chat_store.append_message(
                     chat_id,
@@ -249,18 +340,7 @@ async def chat_stream(
                     },
                 )
                 yield _sse("answer", {"content": cached["answer"]})
-                yield _sse(
-                    "done",
-                    {
-                        "request_id": request_id,
-                        "chat_id": chat_id,
-                        "sources": cached.get("sources", []),
-                        "cached": True,
-                        "llm_provider": "cache",
-                        "llm_model": "",
-                        "latency_ms": round((time.perf_counter() - start) * 1000, 2),
-                    },
-                )
+                yield done(cached.get("sources", []), True, {})
                 return
 
             retrieve = make_retrieve_node(
@@ -272,7 +352,7 @@ async def chat_stream(
             # "status" and "sources" events let the UI show retrieval progress
             # and make citations clickable before generation finishes.
             yield _sse("status", {"stage": "retrieving"})
-            state: dict = {"query": body.query, "top_k": body.top_k, "filters": body.filters}
+            state: dict = {"query": query, "top_k": body.top_k, "filters": body.filters}
             state.update(await retrieve(state))
             if reranker is not None:
                 yield _sse(
@@ -282,8 +362,7 @@ async def chat_stream(
                 state.update(await make_rerank_node(reranker)(state))
 
             chunks = state.get("reranked_chunks") or state.get("retrieved_chunks", [])
-            history = _format_history(history_messages)
-            system, prompt = _build_rag_prompt(body.query, build_context(chunks), history)
+            system, prompt = _build_rag_prompt(query, build_context(chunks), _format_history(history))
 
             sources = [
                 {
@@ -308,32 +387,21 @@ async def chat_stream(
                 yield _sse("error", {"message": str(exc)[:500]})
                 return
 
-            if answer_cache:
-                await answer_cache.set_answer(body.query, full_answer, sources)
+            if answer_cache and cacheable(guard_results, body.filters, bool(history_messages)):
+                await answer_cache.set_answer(query, full_answer, sources)
 
-            await chat_store.append_message(
-                chat_id,
-                {
-                    "role": "assistant",
-                    "content": full_answer,
-                    "sources": sources,
-                    "llm_provider": meta.get("provider", ""),
-                    "llm_model": meta.get("model", ""),
-                    "ts": time.time(),
-                },
-            )
+            assistant_message = {
+                "role": "assistant",
+                "content": full_answer,
+                "sources": sources,
+                "llm_provider": meta.get("provider", ""),
+                "llm_model": meta.get("model", ""),
+                "ts": time.time(),
+            }
+            if flags := _guard_flags(guard_results):
+                assistant_message["guardrail_flags"] = flags
+            await chat_store.append_message(chat_id, assistant_message)
 
-            yield _sse(
-                "done",
-                {
-                    "request_id": request_id,
-                    "chat_id": chat_id,
-                    "sources": sources,
-                    "cached": False,
-                    "llm_provider": meta.get("provider", ""),
-                    "llm_model": meta.get("model", ""),
-                    "latency_ms": round((time.perf_counter() - start) * 1000, 2),
-                },
-            )
+            yield done(sources, False, meta)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

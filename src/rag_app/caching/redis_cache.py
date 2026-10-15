@@ -94,10 +94,16 @@ class RedisCache:
         return new_version
 
     def _build_answer_key(self, query: str) -> str:
-        """Build answer cache key: normalizes query + appends collection version."""
+        """Build answer cache key: normalizes query + appends collection version.
+
+        Also appends whether guardrails are on: answers are only cached once
+        they've passed every guard check, so a hit is served unchecked --
+        which only holds if entries written with guardrails off (or before
+        they existed) can never be read with them on.
+        """
         normalized = normalize_query(query)
         version = self._get_collection_version()
-        raw = f"{normalized}:{version}"
+        raw = f"{normalized}:{version}:g{int(settings.guardrails_enabled)}"
         return _make_cache_key("ans", raw), normalized
 
     def _build_embedding_key(self, text: str) -> str:

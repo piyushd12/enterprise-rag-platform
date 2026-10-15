@@ -8,9 +8,10 @@ new nodes (rerank, HyDE) can be inserted without changing existing ones.
 
 from __future__ import annotations
 
-from typing import TypedDict
+import operator
+from typing import Annotated, TypedDict
 
-from rag_app.core.interfaces import RetrievedChunk
+from rag_app.core.interfaces import GuardResult, RetrievedChunk
 
 
 class RAGState(TypedDict, total=False):
@@ -25,6 +26,15 @@ class RAGState(TypedDict, total=False):
     query: str
     top_k: int
     filters: dict | None
+    # Prior chat turns fed to generation ({role, content, ...} dicts). Empty
+    # for /chat and eval; the input guard returns it with excluded turns
+    # removed.
+    history: list[dict]
+
+    # Guardrails: every check's result for this request. A reducer field
+    # (operator.add), so each guard node appends its results instead of
+    # overwriting the previous node's.
+    guard_results: Annotated[list[GuardResult], operator.add]
 
     # Embedding
     query_embedding: list[float]
