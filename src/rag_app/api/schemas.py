@@ -7,7 +7,7 @@ implementation.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,12 +16,23 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 
+# Filters map straight onto Qdrant FieldConditions (and BM25 metadata
+# matches), so only the payload fields QdrantStore indexes for filtering
+# are allowed, with scalar values. Anything else -- an arbitrary key, a
+# nested object, a list -- is rejected with a 422 at the API boundary
+# instead of reaching the vector store.
+FilterKey = Literal["source_id", "doc_type"]
+FilterValue = Annotated[str, Field(max_length=200)] | int | float | bool
+
+
 class ChatRequest(BaseModel):
     """Request body for POST /chat."""
 
     query: str = Field(..., min_length=1, max_length=2000, description="The user's question")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of chunks to retrieve")
-    filters: dict | None = Field(default=None, description="Optional payload filters, e.g. {'doc_type': 'pdf'}")
+    filters: dict[FilterKey, FilterValue] | None = Field(
+        default=None, description="Optional payload filters, e.g. {'doc_type': 'pdf'}"
+    )
     chat_id: str | None = Field(
         default=None, description="Existing chat to continue; omit to start a new chat"
     )

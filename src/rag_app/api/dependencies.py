@@ -14,6 +14,7 @@ from rag_app.config.settings import settings
 from rag_app.core.interfaces import (
     ChatStore,
     EmbeddingProvider,
+    Guardrails,
     KeywordSearchProvider,
     LLMProvider,
     Reranker,
@@ -85,6 +86,19 @@ def get_keyword_search() -> KeywordSearchProvider:
         collection_name=settings.qdrant_collection_name,
         obs=get_obs(),
     )
+
+
+@lru_cache
+def get_guardrails() -> Guardrails:
+    """Singleton Guardrails (in-process checks).
+
+    The LLM provider is only handed over when the optional groundedness
+    judge is on -- otherwise guardrails never touch an LLM, and building
+    them doesn't construct one.
+    """
+    from rag_app.guardrails.regex_guardrails import RegexGuardrails
+    llm = get_llm_provider() if settings.guard_groundedness_llm else None
+    return RegexGuardrails(obs=get_obs(), llm=llm)
 
 
 @lru_cache

@@ -16,6 +16,12 @@ from rag_app.config.settings import settings
 from rag_app.core.interfaces import LLMProvider, LLMResponse
 
 
+def _as_input(prompt: str, system: str | None) -> str | list[tuple[str, str]]:
+    """A separate system message when one is given, else the bare prompt
+    (sent as a single user message, as before)."""
+    return [("system", system), ("human", prompt)] if system else prompt
+
+
 class OpenRouterProvider(LLMProvider):
     """LLMProvider implementation using OpenRouter's free-tier models."""
 
@@ -35,11 +41,13 @@ class OpenRouterProvider(LLMProvider):
             max_tokens=2048,
         )
 
-    async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:
+    async def generate(
+        self, prompt: str, system: str | None = None, **kwargs: Any
+    ) -> LLMResponse:
         """Generate a completion via OpenRouter."""
         start = time.perf_counter()
 
-        response = await self._llm.ainvoke(prompt)
+        response = await self._llm.ainvoke(_as_input(prompt, system))
         latency = (time.perf_counter() - start) * 1000
 
         # Extract token usage from response metadata
@@ -54,12 +62,14 @@ class OpenRouterProvider(LLMProvider):
             latency_ms=round(latency, 2),
         )
 
-    async def stream(self, prompt: str, meta: dict[str, Any]) -> AsyncIterator[str]:
+    async def stream(
+        self, prompt: str, meta: dict[str, Any], system: str | None = None
+    ) -> AsyncIterator[str]:
         """Stream a completion token-by-token via OpenRouter."""
         start = time.perf_counter()
         tokens_used = 0
 
-        async for chunk in self._llm.astream(prompt):
+        async for chunk in self._llm.astream(_as_input(prompt, system)):
             if chunk.usage_metadata:
                 tokens_used = chunk.usage_metadata.get("total_tokens", tokens_used)
             if chunk.content:

@@ -29,10 +29,12 @@ class LLMRouter(LLMProvider):
         self._fallback = fallback
         self._obs = obs
 
-    async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:
+    async def generate(
+        self, prompt: str, system: str | None = None, **kwargs: Any
+    ) -> LLMResponse:
         """Try primary provider; on any exception, fall back to secondary."""
         try:
-            response = await self._primary.generate(prompt, **kwargs)
+            response = await self._primary.generate(prompt, system=system, **kwargs)
             self._obs.log_event(
                 "llm.call.success",
                 {
@@ -56,7 +58,7 @@ class LLMRouter(LLMProvider):
             )
 
             try:
-                response = await self._fallback.generate(prompt, **kwargs)
+                response = await self._fallback.generate(prompt, system=system, **kwargs)
                 self._obs.log_event(
                     "llm.fallback.success",
                     {
@@ -82,7 +84,9 @@ class LLMRouter(LLMProvider):
                     f"Fallback (openrouter): {fallback_error}."
                 ) from fallback_error
 
-    async def stream(self, prompt: str, meta: dict[str, Any]) -> AsyncIterator[str]:
+    async def stream(
+        self, prompt: str, meta: dict[str, Any], system: str | None = None
+    ) -> AsyncIterator[str]:
         """Stream from the primary provider; fall back to the secondary
         only if the primary fails before yielding any token -- once a
         client has already received partial output from the primary,
@@ -91,7 +95,7 @@ class LLMRouter(LLMProvider):
         """
         yielded_any = False
         try:
-            async for token in self._primary.stream(prompt, meta):
+            async for token in self._primary.stream(prompt, meta, system=system):
                 yielded_any = True
                 yield token
             self._obs.log_event(
@@ -113,7 +117,7 @@ class LLMRouter(LLMProvider):
             )
 
         try:
-            async for token in self._fallback.stream(prompt, meta):
+            async for token in self._fallback.stream(prompt, meta, system=system):
                 yield token
             self._obs.log_event(
                 "llm.fallback.success",

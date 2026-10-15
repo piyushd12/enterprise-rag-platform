@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 # ---------------------------------------------------------------------------
 # Data transfer objects
@@ -48,13 +48,25 @@ class LLMProvider(ABC):
     """Interface for language model providers (Groq, OpenRouter, etc.)."""
 
     @abstractmethod
-    async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:
-        """Generate a completion for the given prompt."""
+    async def generate(self, prompt: str, system: str | None = None, **kwargs: Any) -> LLMResponse:
+        """Generate a completion for the given prompt.
+
+        `system`, when given, is sent as a separate system message ahead of
+        `prompt` (sent as the user message). Trusted instructions belong in
+        `system`; `prompt` may carry untrusted text (retrieved chunks, chat
+        history, the user's question), and keeping the two in separate
+        messages is what lets the model tell instructions from data.
+        Optional so callers that only send one string keep working.
+        """
         ...
 
     @abstractmethod
-    def stream(self, prompt: str, meta: dict[str, Any]) -> AsyncIterator[str]:
+    def stream(
+        self, prompt: str, meta: dict[str, Any], system: str | None = None
+    ) -> AsyncIterator[str]:
         """Stream a completion token-by-token for the given prompt.
+
+        `system` works as in generate().
 
         Fills `meta` in place (provider, model, latency_ms, tokens_used)
         as streaming finishes -- a plain dict rather than a return value
@@ -232,4 +244,131 @@ class KeywordSearchProvider(ABC):
     @abstractmethod
     def search(self, query: str, top_k: int) -> list[RetrievedChunk]:
         """Return the top_k chunks by lexical relevance to the query."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Guardrails
+# ---------------------------------------------------------------------------
+
+GuardAction = Literal["pass", "flag", "block"]
+
+
+@dataclass
+class GuardResult:
+    """Outcome of one guardrail check.
+
+    A block is a normal result, not an exception: a refused request still
+    flows through the same response, persistence and logging code as an
+    answered one, which is what keeps the two chat paths from drifting.
+    `reason` is for logs and the API's `guardrail` field; `message` is the
+    user-facing refusal and is only set on blocks.
+    """
+
+    action: GuardAction
+    check: str  # e.g. "input.injection", "context.relevance", "output.leakage"
+    reason: str = ""
+    score: float | None = None
+    message: str = ""
+
+
+def first_block(results: list[GuardResult]) -> GuardResult | None:
+    """The first blocking result, or None if nothing blocked."""
+    return next((r for r in results if r.action == "block"), None)
+
+
+class StreamFilter(ABC):
+    """Screens LLM output on its way to the client, one token at a time.
+
+    Streamed text can't be taken back once sent, so masking and leakage
+    checks have to run before a token leaves the server, not after the
+    answer is complete. The filter holds back a short tail of the stream
+    and only releases text that can no longer turn into a match. Checks
+    that need the whole answer (citations) run afterwards via
+    Guardrails.review_output() and can only flag, never block.
+    """
+
+    results: list[GuardResult]
+
+    @abstractmethod
+    def feed(self, token: str) -> str:
+        """Add a token; return the text now safe to send ("" to hold back).
+
+        After a block (see first_block(self.results)) every further call
+        returns "" -- the caller should stop consuming the LLM stream.
+        """
+        ...
+
+    @abstractmethod
+    def flush(self) -> str:
+        """End of stream: return the held-back tail, screened."""
+        ...
+
+
+class Guardrails(ABC):
+    """Every guardrail check for one request, behind a single interface.
+
+    Both chat paths call these same methods -- /chat through LangGraph nodes
+    (rag/nodes.py), /chat/stream directly -- so a check exists in exactly
+    one place and can't silently cover one path but not the other.
+    Implementations log every decision with the request_id themselves.
+    """
+
+    @abstractmethod
+    async def check_input(
+        self, query: str, history: list[dict[str, Any]], request_id: str = ""
+    ) -> tuple[str, list[dict[str, Any]], list[GuardResult]]:
+        """Screen the user's query and the chat history before anything
+        else runs (cache lookup included).
+
+        Returns the query to use from here on (secrets masked), the history
+        to feed generation (turns that tripped a check removed), and the
+        results.
+        """
+        ...
+
+    @abstractmethod
+    def check_context(
+        self,
+        query: str,
+        chunks: list[RetrievedChunk],
+        *,
+        reranked: bool,
+        has_history: bool,
+        request_id: str = "",
+    ) -> tuple[list[RetrievedChunk], list[GuardResult]]:
+        """Screen retrieved chunks between rerank and generate.
+
+        Returns the chunks generation may see and the results; a block
+        means generation should not run at all (no LLM call).
+        """
+        ...
+
+    @abstractmethod
+    def scan_chunk(self, text: str) -> tuple[str | None, list[str]]:
+        """Ingestion-time scan of one chunk. Returns the text to store
+        (None to drop the chunk) and flags for its payload's guard_flags."""
+        ...
+
+    @abstractmethod
+    def stream_filter(self, request_id: str = "") -> StreamFilter:
+        """A fresh output filter for one answer (streamed or not)."""
+        ...
+
+    @abstractmethod
+    async def review_output(
+        self,
+        answer: str,
+        chunks: list[RetrievedChunk],
+        query: str,
+        request_id: str = "",
+    ) -> list[GuardResult]:
+        """Checks that need the complete answer (citations, optional
+        groundedness judge). Flags only -- by now the answer may already
+        have been streamed."""
+        ...
+
+    @abstractmethod
+    def redact(self, text: str) -> str:
+        """Mask PII and secrets in text bound for logs and traces."""
         ...

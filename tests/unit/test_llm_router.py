@@ -28,16 +28,19 @@ class _StubProvider(LLMProvider):
         self._error = error
         self._error_after_tokens = error_after_tokens
         self.calls = 0
+        self.systems: list[str | None] = []
 
-    async def generate(self, prompt: str, **kwargs) -> LLMResponse:
+    async def generate(self, prompt: str, system: str | None = None, **kwargs) -> LLMResponse:
         self.calls += 1
+        self.systems.append(system)
         if self._error is not None:
             raise self._error
         assert self._response is not None
         return self._response
 
-    async def stream(self, prompt: str, meta: dict):
+    async def stream(self, prompt: str, meta: dict, system: str | None = None):
         self.calls += 1
+        self.systems.append(system)
         assert self._response is not None or self._error is not None
         if self._response is not None:
             for i, token in enumerate(self._response.content.split()):
@@ -121,3 +124,15 @@ async def test_stream_does_not_fall_back_once_a_token_was_already_sent():
             pass
 
     assert fallback.calls == 0
+
+
+async def test_system_message_reaches_whichever_provider_answers():
+    primary = _StubProvider(error=RuntimeError("groq down"))
+    fallback = _StubProvider(response=_response("openrouter"))
+    router = LLMRouter(primary=primary, fallback=fallback, obs=ObservabilityProvider())
+
+    await router.generate("q", system="rules")
+    [_ async for _ in router.stream("q", {}, system="rules")]
+
+    assert primary.systems == ["rules", "rules"]
+    assert fallback.systems == ["rules", "rules"]

@@ -23,6 +23,7 @@ from rag_app.embeddings.fastembed_provider import FastEmbedProvider
 from rag_app.ingestion.pipeline import ingest_file
 from rag_app.observability.provider import ObservabilityProvider
 from rag_app.rag.graph import build_rag_graph
+from rag_app.rag.nodes import RAG_SYSTEM_PROMPT
 from rag_app.vectorstore.qdrant_store import QdrantStore
 
 TEST_COLLECTION = f"test_rag_pipeline_flow_{uuid.uuid4().hex[:8]}"
@@ -47,9 +48,11 @@ class _StubLLM(LLMProvider):
 
     def __init__(self):
         self.last_prompt: str | None = None
+        self.last_system: str | None = None
 
-    async def generate(self, prompt: str, **kwargs) -> LLMResponse:
+    async def generate(self, prompt: str, system: str | None = None, **kwargs) -> LLMResponse:
         self.last_prompt = prompt
+        self.last_system = system
         return LLMResponse(
             content="The mitochondria is the powerhouse of the cell.",
             provider="stub",
@@ -58,8 +61,9 @@ class _StubLLM(LLMProvider):
             latency_ms=1.0,
         )
 
-    async def stream(self, prompt: str, meta: dict):
+    async def stream(self, prompt: str, meta: dict, system: str | None = None):
         self.last_prompt = prompt
+        self.last_system = system
         meta["provider"] = "stub"
         meta["model"] = "stub-model"
         yield "The mitochondria is the powerhouse of the cell."
@@ -116,4 +120,5 @@ async def test_ingest_then_retrieve_then_generate(tmp_path, obs, vector_store):
     # chunk, not just the raw question.
     assert stub_llm.last_prompt is not None
     assert "mitochondria" in stub_llm.last_prompt.lower()
+    assert stub_llm.last_system == RAG_SYSTEM_PROMPT
     assert result["generated_answer"] == "The mitochondria is the powerhouse of the cell."
